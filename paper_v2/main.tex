@@ -35,27 +35,27 @@ Scalable Empirical-Bayes Forecasting for Intermittent Demand}
 
 \begin{abstract}
 Intermittent-demand forecasters routinely fix two structural choices in
-advance: \emph{how to pool} evidence across items (a fixed ADI/CV$^2$
-taxonomy, or one global prior) and \emph{how to weight} it over time
-(uniformly, or with a hand-set smoothing constant). We study what happens
-when both are selected from data instead. \REMIX{} is a hierarchical
-empirical-Bayes forecaster in which an exponential recency discount is
-applied to the sufficient statistics used for both the item-level
-posterior and the hyperparameter fit; the pooling partition---a single
-pool, the classical taxonomy, or BIC-selected mixture components---is
-scored jointly with the discount on an internal chronological validation
-split. Estimation stays closed form, deterministic, and $O(N)$. Two
-theoretical results frame the design: classical TSB is a boundary case of
-the family, exact under a self-consistent initialization; and a two-sided
+advance: \emph{how to pool} evidence across items, and \emph{how to
+weight} it over time. We study what happens when both are selected from
+data. \REMIX{} is a hierarchical empirical-Bayes forecaster in which an
+exponential recency discount is applied to the sufficient statistics used
+for both the item-level posterior and the hyperparameter fit, and the
+pooling partition---a single pool, the classical taxonomy, or
+BIC-selected mixture components---is scored jointly with the discount on
+an internal chronological validation split. Estimation stays closed form,
+deterministic, and $O(N)$. Classical TSB is a boundary case of the
+family, exact under a self-consistent initialization, and a two-sided
 credibility bound shows that the discount which keeps the pooled prior
-active also shrinks the effective sample behind each group, giving a
-practical condition for how finely a partition can be resolved from the
-window. Across five public panels (19{,}000+ evaluated series), \REMIX{}
+active also shrinks the effective sample behind each group, bounding how
+finely a partition can be resolved. Across five public panels (19{,}000+ series) \REMIX{}
 attains the best mean scaled pinball loss among non-degenerate methods on
-every panel, and forgetting accounts for most of the improvement. Finer
-learned partitions supply interpretable structure and cold-start benefits
-but little aggregate gain---a negative result we establish by three
-targeted repairs and a controlled simulation.
+every one, with forgetting responsible for most of the gain.
+Finer learned partitions add interpretable structure and cold-start
+benefits but little aggregate gain, and simulations with known ground
+truth locate the reason: a correct partition does help on every proper
+scoring rule, by more when items hold less of their own history, but the
+leverage available here is small---and mean absolute error, the metric
+this literature reports most, reverses the sign of that help.
 \end{abstract}
 
 % =========================================================================
@@ -158,14 +158,18 @@ from the window by this estimator. Classical credibility
 (Proposition~\ref{prop:credibility}) and a finite-class selection
 guarantee (Appendix~\ref{app:proofs}) are supporting results, not new.
 \textbf{(3) Empirics.} Across five public panels we measure the two axes
-separately. Forgetting drives the first-order gains. Differences among
+separately. Forgetting drives the first-order gains; differences among
 pooling partitions are small on aggregate metrics and survive three
-targeted repairs, which we report as a measured negative result rather
-than an assumption; a controlled synthetic study separates the possible
-explanations. Probabilistic performance is strong---best mean scaled
+targeted repairs. A controlled study with known ground truth then
+separates the explanations: a correct partition improves every proper
+scoring rule---the more so the less history each item has---while
+\emph{degrading} mean absolute error, so the flat pooling axis reflects
+low leverage on these panels rather than absent structure. That
+experiment also gives a controlled instance of a pathology we document on
+real data, where a constant-zero forecast attains the lowest MAE on three
+of five panels. Probabilistic performance is strong---best mean scaled
 pinball among non-degenerate methods on all five panels---while point
-performance is competitive but not uniformly best, and we show that the
-standard point metrics are themselves degenerate here.
+performance is competitive but not uniformly best.
 
 % =========================================================================
 \section{Related Work}\label{sec:related}
@@ -817,9 +821,11 @@ pool appears in the sparsest cold-start bins (e.g., $-4.5\%$ MAE for
 items with $\le1$ positive observation), while it removes the
 taxonomy's hand-set thresholds at no aggregate cost.
 
-\textbf{The flatness is a resolution limit, not an estimation defect.}
-A second-order effect invites the obvious objection that the estimator,
-not the data, is at fault, so we tested that objection directly.
+\textbf{The flatness is not an estimation defect.} A second-order effect
+invites the obvious objection that the estimator, not the data, is at
+fault, so we tested that objection directly. (Section~\ref{sec:synthetic}
+then tests the complementary question on data whose true partition we
+know.)
 Diagnostics first: on this panel the learned partition drives the plug-in
 $\hat\tau_g^2$ of three of its five components to the boundary at the
 selected $w=0.98$, and the identifiability statistic
@@ -854,12 +860,13 @@ worst, improves $7.1\%$---without ever overtaking the single pool, and
 costs $4.4\%$ on Carparts, the one panel where the unregularized learned
 partition had led. Appendix~\ref{app:resolution} gives the full grids.
 The conclusion we draw is the one
-Corollary~\ref{cor:resolution} licenses: on these panels the item's own
-history already dominates its prior (median $\lambda_i$ between $0.75$
-and $0.90$ under the single pool), so no partition can move the
-aggregate. Learned pooling earns its place by removing hand-set
-thresholds and by helping where $\lambda_i$ is genuinely small, not by
-raising the mean.
+Corollary~\ref{cor:resolution} licenses, and which
+Section~\ref{sec:synthetic} confirms against known ground truth: on these
+panels the item's own history already dominates its prior (median
+$\lambda_i$ between $0.75$ and $0.90$ under the single pool), so the
+leverage any partition has over the aggregate is small to begin with.
+Learned pooling earns its place by removing hand-set thresholds and by
+helping where $\lambda_i$ is genuinely small, not by raising the mean.
 
 Paired tests: forgetting improves per-series
 MAE over the stationary model with Holm-adjusted $p_t<10^{-24}$
@@ -874,94 +881,113 @@ its MAE with the heaviest RMSE of any configuration in the table:
 hierarchical pooling suppresses exactly the loss tail where TSB is
 weakest.
 
-\subsection{A controlled test of the resolution condition}\label{sec:synthetic}
+\subsection{A controlled test with known ground truth}\label{sec:synthetic}
 
-The panel results say that partition-level differences are small; they
-cannot say \emph{why}, because on real data the true partition is
+The panel results say partition-level differences are small on aggregate
+metrics; they cannot say why, because on real data the true partition is
 unknown. We simulate hierarchical hurdle panels where it is known, with
-the generator matched to the fitted model: $K$ groups whose centers are
-symmetric about a fixed grand mean in log-size and, in logit, about a
-fixed occurrence rate, so that moving the centers apart does not also
-change the panel's scale or difficulty. Four estimators form a ladder
-that separates the possible explanations---a single pool with estimated
-hyperparameters; the \emph{true} labels with estimated group
-hyperparameters; the true labels with the \emph{true} group
-hyperparameters; and the true conditional predictive distribution, which
-is the irreducible floor. The last two matter: an arm that receives the
-true labels but must still estimate the group hyperparameters cannot
-distinguish ``the partition carries no information'' from ``the
-partition's hyperparameters are hard to estimate''.
+the generator matched to the fitted model. Group centers are symmetric
+about a fixed grand mean in log-size and, in logit, about a fixed
+occurrence rate, so moving them apart changes separation without changing
+the panel's scale or difficulty. Every arm is reduced to the same
+per-observation predictive triple $(p,\mu,\sigma^2)$ of the
+hurdle-lognormal law, and all metrics are computed from that one
+representation, so no two metrics can disagree because of how an arm was
+rendered. Four arms form a ladder: a single pool; the \emph{true} labels
+with estimated group hyperparameters; the true labels with the
+\emph{true} hyperparameters; and the true conditional predictive
+distribution, which is the irreducible floor and serves as a correctness
+check---it is best on every metric in every cell.
 
-\paragraph{What governs the value of a partition.} The controlling
-quantity is not how far apart the groups are but how much data each item
-already has, exactly as the credibility weight
-$\lambda_i=n_i/(n_i+\kappa_g)$ says. We hold the structure fixed at a
-deliberately easy configuration---$K{=}2$, $500$ items per group,
-occurrence rates $0.05$ against $0.80$, size centers three log-units
-apart, no discounting---and sweep only the series length.
+\paragraph{The partition carries real information, and MAE hides it.}
+Table~\ref{tab:sanity} reports the advantage of the true partition over a
+single pool across metrics. On every proper scoring rule the oracle
+partition wins, in every cell of the grid: predictive negative
+log-likelihood improves in $9$ of $9$ paired replicates in all six
+cells, by $0.23\%$ to $2.40\%$; log-size MSE by $1.1\%$ to $18.4\%$;
+occurrence Brier and mean pinball likewise. On MAE it \emph{loses}, in
+five of six cells. MAE is the only metric that reverses the ranking of a
+model structure we know to be correct. This is the same pathology
+Section~\ref{sec:experiments} documents on real panels---where a constant-zero
+forecast attains the lowest MAE on three of five---observed here under
+controlled conditions, and it is why we lead with the distributional
+comparison.
 
 \begin{table}[t]
 \centering
-\caption{Controlled sweep with the generator matched to the model:
-$K{=}2$ well-separated groups, only the series length varying. The
-oracle partition's advantage over a single pool is governed by the
-item's own sample size, not by how separable the groups are. With the
-true hyperparameters supplied as well, the numbers barely move---so
-estimating them is not the binding constraint here.}
+\caption{Advantage of the \emph{true} partition over a single pool on
+simulated panels with known ground truth (mean \% improvement over $9$
+paired replicates, standard error in parentheses; positive favors the
+partition). $T$ is the series length and $n_i^{+}$ the median count of
+positive observations per item. The partition helps on every proper
+scoring rule and hurts on MAE.}
 \label{tab:sanity}
-\begin{tabular}{rrrrrr}
+\begin{tabular}{llrrrr}
 \toprule
-& median & \multicolumn{3}{c}{MAE} & oracle\\
-\cmidrule(lr){3-5}
-$T$ & $n_i^{+}$ & single pool & oracle labels & \;+true hypers & gain\\
+$T$ & $w$ & NLL & log-size MSE & pinball & MAE\\
 \midrule
-400 & 154.5 & 5.2006 & 5.1987 & 5.1999 & $0.04\%$\\
-60 & 23.5 & 5.1682 & 5.1525 & 5.1567 & $0.30\%$\\
-25 & 10.0 & 5.3103 & 5.2302 & 5.2355 & $1.51\%$\\
-12 & 4.5 & 5.5383 & 5.3488 & 5.3439 & $3.42\%$\\
+$30$ & $0.90$ & $2.40\;(0.18)$ & $17.15\;(2.39)$ & $2.25\;(0.61)$ & $-1.72\;(0.73)$\\
+$30$ & $0.95$ & $1.12\;(0.39)$ & $9.00\;(2.45)$ & $-0.44\;(0.58)$ & $-0.17\;(0.51)$\\
+$30$ & $1.00$ & $1.02\;(0.08)$ & $8.37\;(1.53)$ & $-0.69\;(0.32)$ & $-1.95\;(0.59)$\\
+$120$ & $0.90$ & $1.65\;(0.22)$ & $18.36\;(1.56)$ & $1.57\;(0.64)$ & $-3.34\;(1.37)$\\
+$120$ & $0.95$ & $0.96\;(0.11)$ & $3.65\;(0.77)$ & $0.23\;(0.28)$ & $-1.32\;(0.73)$\\
+$120$ & $1.00$ & $0.23\;(0.04)$ & $1.13\;(0.31)$ & $-0.32\;(0.13)$ & $-0.80\;(0.11)$\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:sanity} is the result. At $T{=}400$, where the median item
-has $154$ positive observations, the true partition is worth $0.04\%$:
-$\lambda_i$ is essentially one for every item and \emph{no} prior,
-correct or not, can matter. As the window shrinks the advantage rises
-monotonically to $3.42\%$ at $T{=}12$. Mean pinball behaves the same way
-($0.01\%$ to $1.53\%$). Supplying the true group hyperparameters instead
-of estimating them changes almost nothing, and the true predictive
-distribution is best everywhere, as it must be---together these bound
-how much of the remaining gap is estimation error rather than model
-misspecification.
+\paragraph{What governs the size of the advantage.} Two things, both
+predicted by the credibility weight $\lambda_i=n_i/(n_i+\kappa_g)$.
+First, the item's own sample. Holding the structure fixed at a
+deliberately easy configuration ($K{=}2$, $500$ items per group,
+occurrence $0.05$ against $0.80$, centers three log-units apart, no
+discounting) and sweeping only the series length, the oracle partition's
+pinball advantage falls monotonically from $1.53\%$ at $T{=}12$ (median
+$4.5$ positives per item) to $0.01\%$ at $T{=}400$ (median $154$), with
+NLL, Brier and log-size MSE all following. At $T{=}400$ every
+$\lambda_i\approx1$ and \emph{no} prior, correct or not, can matter.
+Second, the discount. Strengthening it shrinks $n_i$, lowers
+$\lambda_i$, and so raises the leverage of whichever prior is in
+force---which is why the advantage in Table~\ref{tab:sanity} is largest
+at $w{=}0.90$ in both blocks.
 
-This reframes the empirical finding of Section~\ref{sec:ablation}
-without softening it. The learned partition does not move the aggregate
-metrics on our five panels not because the structure is absent or
-unrecoverable, but because the median item on those panels already
-carries enough of its own history for the prior to be a minor term:
-under a single pool, median $\lambda_i$ runs $0.75$--$0.90$. The
-partition's leverage is $\kappa_g/(n_i+\kappa_g)$, and on these panels
-that factor is small for most items and large only in the sparsest
-cold-start bins---which is exactly where the measured differences appear
-(Appendix~\ref{app:resolution}). Corollary~\ref{cor:resolution} adds the
-second mechanism: strengthening the discount both raises the leverage
-(by shrinking $n_i$) and degrades the estimate of $\tau_g^2$ that sets
-$\kappa_g$. The two effects act in opposite directions, which is why the
-net effect of the pooling axis is small rather than reliably signed.
+\paragraph{The two mechanisms of Proposition~\ref{prop:twosided} pull
+against each other.} Forgetting raises the prior's leverage, as just
+described. It also degrades the estimate of the group variance component
+that sets $\kappa_g$: in the same runs the RMSE of $\hat\tau_g^2$ against
+its true value roughly doubles as $w$ falls from $1.00$ to $0.90$
+($0.037\to0.144$ at $T{=}120$, $0.074\to0.149$ at $T{=}30$), which is
+Corollary~\ref{cor:resolution}'s mechanism measured directly. With the
+\emph{true} labels the first effect wins. Supplying the true
+hyperparameters as well changes little in the drift-free sweep; under
+drift it is actively worse, because the generating hyperparameters
+describe the process at the start of the window rather than the state
+being forecast---a reminder that ``true parameters'' and ``best prior
+for forecasting'' are not the same object under nonstationarity.
 
-\paragraph{A correction.} An earlier version of this experiment reported
-that the oracle partition \emph{loses} to a single pool by a margin that
-grows with group separation, and read that as an absence of usable
-information. That reading was an artifact of two defects, both of which
-we corrected and report here for completeness. The generator placed group
+\paragraph{What this does and does not settle.} It settles that a correct
+partition is worth having on distributional criteria, that its value is
+governed by effective sample size rather than by group separation, and
+that MAE can reverse the sign of that value. It does not show that our
+\emph{learned} partition captures the structure present in the real
+panels: there, the median item under a single pool already has
+$\lambda_i$ between $0.75$ and $0.90$, so the leverage is small to begin
+with, and the aggregate differences we measure sit inside it. Whether a
+partition learned under a different objective would cash in more of the
+leverage that forgetting creates is the open question this experiment
+sharpens rather than answers.
+
+\paragraph{Corrections to an earlier version.} We record two, since both
+changed the conclusion. The first version of this experiment placed group
 centers at $0,s,2s,3s$, so raising the separation also raised the panel's
 demand scale---mean MAE ran from $0.7$ to $67$ across the grid and cells
-were not comparable. And the comparison was made on MAE alone, which on
-intermittent data rewards zero-leaning forecasts; on mean pinball over
-the same runs the oracle partition in fact \emph{wins} whenever
-forgetting is active ($+2.1\%$ to $+3.2\%$ at $w{=}0.90$, ten of ten
-paired replicates), and loses only in the undiscounted cells. The
-corrected design above holds difficulty fixed and reports both.
+were not comparable; and it compared arms on MAE alone. Under those two
+defects the oracle partition appeared to \emph{lose} by a margin growing
+with separation, which we had read as an absence of usable information.
+Both are corrected above, and the conclusion reverses. The oracle also
+initially received true labels but re-estimated the hyperparameters, so
+it could not separate ``no information'' from ``hyperparameters hard to
+estimate''; the ladder now includes both.
 
 \begin{figure}[t]
 \centering
