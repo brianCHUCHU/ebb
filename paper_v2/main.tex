@@ -1,0 +1,1349 @@
+% =========================================================================
+% REMIX — arXiv preprint (Overleaf-compilable, pdfLaTeX)
+% Compile: pdflatex main.tex (x2). Figures in figs/*.pdf (upload folder).
+% Maps 1:1 onto the AISTATS template for later conversion.
+% =========================================================================
+\documentclass[twocolumn,10pt]{article}
+
+\usepackage[margin=1in,columnsep=0.25in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+
+\newcommand{\REMIX}{\textsc{Remix}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\ind}[1]{\mathbf{1}\{#1\}}
+\newcommand{\best}[1]{\textbf{#1}}
+\newcommand{\secondbest}[1]{\underline{#1}}
+
+\title{Learning to Pool and to Forget:\\
+Scalable Empirical-Bayes Forecasting for Intermittent Demand}
+
+\author{Zong-Han Bai \qquad Po-Yen Chu}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Forecasters for intermittent demand face two structural decisions that are
+almost always hard-coded: \emph{how to pool} information across items
+(fixed ADI/CV$^2$ taxonomies, or a single global prior) and \emph{how to
+weight} information over time (uniformly, or with a hand-tuned smoothing
+constant). We present \REMIX{} (Recency-weighted Empirical-bayes
+MIXtures), a hierarchical empirical-Bayes forecaster that learns both
+decisions from data: an exponential recency discount applied directly to
+the sufficient statistics gives closed-form obsolescence tracking, and the
+pooling partition is chosen among a single pool, the classical taxonomy,
+and BIC-selected mixture components---jointly with the discount---on an
+internal chronological validation split. Estimation stays closed form,
+deterministic, and $O(N)$. Theory carries the design: classical TSB is
+recovered \emph{exactly} in the noninformative-prior corner of the model
+plane; discounting bounds the effective sample size so hierarchical
+shrinkage never washes out; and finite-sample MSE bounds under occurrence
+drift yield an $O(\delta^{2/3})$ tracking rate with the stationary model
+recovered as drift vanishes---precisely the behavior the selector exhibits
+empirically. Across five public panels (Online Retail, M5, Auto, Carparts,
+RAF; 19{,}000+ evaluated series), \REMIX{} attains the best mean scaled
+pinball loss on every dataset against classical, conformal, state-space,
+and Tweedie baselines, and on the point metrics where the stationary
+hierarchical model trails classical methods, forgetting closes the gap:
+on M5 RMSSE from behind to best overall, on Online Retail MAE from
+$3.4\%$ behind TSB to within $1.6\%$.
+\end{abstract}
+
+% =========================================================================
+\section{Introduction}\label{sec:intro}
+% =========================================================================
+
+Intermittent demand---long runs of zeros punctuated by sporadic positive
+quantities---dominates spare-parts logistics, long-tail e-commerce, and
+hospital supply chains. Its two modeling traditions embody complementary
+insights. \emph{Local exponential smoothing} (Croston, SBA, TSB)
+\citep{croston1972,syntetos2005accuracy,teunter2011} knows that demand
+processes drift and die, and forgets old data accordingly; but it
+estimates every series in isolation and specifies no probabilistic model.
+\emph{Hierarchical Bayesian} approaches
+\citep{chapados2014,seeger2016,pitkin2024} know that thousands of sparse
+series should share statistical strength; but they typically assume
+stationarity within the estimation window, fix the pooling structure by
+hand, and lean on sampling-based inference that strains at catalog scale.
+
+Each tradition hard-codes what the other learns. This paper's premise is
+that \emph{both} structural decisions---how strongly to pool across items,
+and how quickly to forget across time---should be coordinates of a single
+model, selected from data. Figure~\ref{fig:overview} summarizes the
+resulting design space: the horizontal axis is prior strength $\phi$
+(cross-sectional shrinkage), the vertical axis is a recency discount $w$
+(temporal forgetting). Classical TSB lives in the no-pooling corner with
+$w<1$; stationary hierarchical models live on the $w{=}1$ edge; \REMIX{}
+selects its position on both axes---and the pooling \emph{partition}
+itself---on a chronological validation split of the training window.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.96\textwidth]{figs/fig1_overview.pdf}
+\caption{\textbf{(a)} Two structural axes span classical intermittent-demand
+forecasting: cross-series pooling and temporal forgetting $(1-w)$.
+Classical TSB and stationary hierarchical EB each fix one axis; \REMIX{}
+selects its position on both axes---and the pooling partition
+itself---by chronological validation.
+\textbf{(b)} All estimation consumes per-item sufficient statistics; the
+forgetting and pooling candidates are scored jointly, the winning
+configuration $(g,w)$ is refit on the full training window, and every
+step preserves closed-form, deterministic, $O(N)$ inference.}
+\label{fig:overview}
+\end{figure*}
+
+Concretely, we build on a hierarchical empirical-Bayes (EB) formulation of
+TSB's occurrence--size decomposition (Beta--Binomial occurrence,
+log-normal sizes) in which every estimate is a closed-form function of
+per-item sufficient statistics. This structure admits two generic,
+composable operators. A \emph{forgetting operator} replaces each
+sufficient statistic by its exponentially discounted analogue, giving
+every posterior---and every hyperparameter fit---a power-prior
+interpretation and a temporal-adaptation capability, at zero additional
+cost. A \emph{pooling operator} replaces the hard-coded item partition
+with candidates that include mixture components learned by a deterministic
+EM procedure whose E- and M-steps reuse the model's own marginals.
+\REMIX{} selects the partition and the discount jointly by validation on
+the most recent fraction of the training window.
+
+\paragraph{Contributions.}
+\textbf{(1)} A single scalable model that subsumes classical TSB
+\emph{exactly}: Proposition~\ref{prop:tsb-limit} shows the discounted
+posterior mean equals the TSB recursion under a self-consistent
+initialization, with geometric agreement otherwise---the 50-year-old
+heuristic is the noninformative-prior corner of the plane.
+\textbf{(2)} Theory that explains why the axes are complements:
+discounting caps the effective sample size, so pooled priors retain
+positive weight at \emph{every} horizon (Proposition~\ref{prop:active});
+finite-sample MSE bounds under occurrence drift give an
+$O(\delta^{2/3})$ tracking rate and $w^{*}\!\to\!1$ as drift vanishes
+(Proposition~\ref{prop:drift}), justifying validation-based selection.
+\textbf{(3)} A comprehensive empirical study on five public panels with
+point, probabilistic, walk-forward, significance-tested, and efficiency
+comparisons: best mean scaled pinball on all five datasets, repaired point
+metrics, 11\% sharper intervals near nominal coverage (with calibration
+enabled in both configurations), sub-millisecond base inference per
+item, and single-digit milliseconds end-to-end including selection.
+
+% =========================================================================
+\section{Related Work}\label{sec:related}
+% =========================================================================
+
+\textbf{Heuristics.} Croston's decomposition \citep{croston1972} smooths
+inter-demand intervals and positive sizes; SBA \citep{syntetos2005accuracy}
+corrects its bias; TSB \citep{teunter2011} smooths occurrence probability
+directly, enabling decay under obsolescence; ADIDA
+\citep{nikolopoulos2011} and IMAPA \citep{kourentzes2016} exploit temporal
+aggregation. All treat items independently, and their smoothing constants
+are the very quantities \REMIX{} learns.
+
+\textbf{Hierarchical and state-space models.} \citet{chapados2014} and
+\citet{seeger2016} pool related count series with hierarchical priors at
+industrial scale via approximate Bayesian inference; \citet{pitkin2024}
+develops hierarchical hurdle models for retail; iETS
+\citep{svetunkov2023iets} gives a likelihood-based state-space treatment.
+These models pool but do not forget, and their pooling structures are
+fixed a priori. \REMIX{} keeps their statistical strengths with
+closed-form EB updates and adds both learned structure and forgetting.
+
+\textbf{Discounting, power priors, and credibility.} Exponential
+discounting of information is a classical device: discount factors are
+central to Bayesian dynamic linear models \citep{westharrison1997}, and
+raising a likelihood to a power to down-weight historical data is the
+power-prior construction of \citet{ibrahimchen2000}. Our forgetting
+operator transplants this device to a different location: the discount
+acts on the \emph{sufficient statistics that drive empirical-Bayes
+hyperparameter estimation}---so the group-level priors themselves, not
+only the item states, adapt---while everything stays closed form and the
+discount strength is selected, not set. Likewise, the credibility form
+$\lambda_i=n_i/(n_i+\phi_g)$ of our posteriors is precisely the actuarial
+credibility factor \citep{buhlmann1967}; we import that literature's
+risk guarantees (Proposition~\ref{prop:credibility}) rather than
+rederive them. On the pooling axis, the local-versus-global tradeoff for
+forecasting groups of series is analyzed by
+\citet{monteromanso2021}; \REMIX{} treats the pooling \emph{structure}
+as one of the learned quantities. Count models for intermittent
+inventories are developed by \citet{snyder2012}.
+
+\textbf{Evaluation and modern baselines.} High quantiles drive inventory
+decisions \citep{kolassa2016}; pinball is a proper scoring rule
+\citep{gneiting2007}, which justifies using it as the selection
+criterion. We emphasize scaled pinball loss \citep{makridakis2022} at
+$q\ge0.75$ and compare against split-conformal wrappers \citep{lei2018}
+(acknowledging that adaptive conformal methods
+\citep{gibbs2021} could strengthen these baselines under
+nonstationarity), per-series Tweedie regression, the GP--Tweedie suite's
+datasets \citep{damato2025}, iETS, and neural models (DeepAR
+\citep{salinas2020}, Deep Renewal Processes \citep{turkmen2019}).
+
+% =========================================================================
+\section{Method}\label{sec:method}
+% =========================================================================
+
+\subsection{Base model: hierarchical EB on sufficient statistics}
+\label{sec:base}
+Item $i$ has demand $y_{i,t}\ge0$, $t=1,\dots,T_i$; write
+$p_{i,t}=\ind{y_{i,t}>0}$ and $\ell_{i,t}=\log y_{i,t}$ when positive.
+Each item belongs to a pooling group $g(i)$ and
+\begin{align}
+\pi_i &\sim \mathrm{Beta}(\alpha_g,\beta_g), &
+p_{i,t}\mid\pi_i &\sim \mathrm{Bern}(\pi_i),\nonumber\\
+\mu_i &\sim \mathcal{N}(\mu_{0,g},\tau^2_g), &
+\ell_{i,t}\mid\mu_i &\sim \mathcal{N}(\mu_i,\sigma^2_g),
+\label{eq:model}
+\end{align}
+with $y_{i,t}=e^{\ell_{i,t}}p_{i,t}$. Group hyperparameters are fit by
+empirical Bayes (Beta--Binomial marginal likelihood; intercept-only REML
+for sizes; conjugate scaled-inv-$\chi^2$ item variances), item posteriors
+are conjugate, and the point forecast keeps TSB's multiplicative form
+$\hat y_i=\hat\pi_i\exp(\hat\mu_i+\tfrac12\hat\sigma^2_i)$; the predictive
+law is zero-inflated log-normal
+(Appendix~\ref{app:implementation}). Crucially, every quantity above is a
+function of four per-item sufficient statistics:
+$n_i$ (observations), $s_i$ (occurrences), and the sum and sum-of-squares
+of positive log-sizes.
+
+\subsection{The forgetting operator}\label{sec:discount}
+For $w\in(0,1]$ replace each statistic by its discounted analogue,
+\begin{equation}
+n_i(w)=\!\sum_{t\le T_i}\! w^{T_i-t},\qquad
+s_i(w)=\!\sum_{t\le T_i}\! w^{T_i-t} p_{i,t},
+\label{eq:discounted-stats}
+\end{equation}
+and likewise for the log-size sums. All EB objectives extend to
+real-valued pseudo-counts through their log-Gamma representations, so the
+\emph{entire} pipeline---hyperparameter fitting included---becomes a
+weighted-likelihood (power-prior) scheme, and $w{=}1$ reproduces the
+stationary model exactly. The occurrence posterior mean becomes
+\begin{equation}
+\hat\pi_i(w)
+=\lambda_i(w)\,\bar p_i(w)+\bigl(1-\lambda_i(w)\bigr)\mu_{\pi,g},
+\label{eq:disc-post}
+\end{equation}
+with $\bar p_i(w)=s_i(w)/n_i(w)$ and credibility
+$\lambda_i(w)=n_i(w)/(n_i(w)+\phi_g)$, $\phi_g=\alpha_g+\beta_g$.
+
+\subsection{The pooling operator}\label{sec:mixture}
+Rather than hard-coding $g(\cdot)$, we form candidate partitions:
+the single global pool; the classical ADI/CV$^2$ taxonomy
+\citep{syntetos2005categorization}; and \emph{learned} partitions in which
+the group label is latent and each of $K$ components carries its own
+$(\alpha_k,\beta_k,\mu_{0,k},\tau^2_k,\sigma^2_k)$. The item-level
+mixture marginal multiplies the Beta--Binomial occurrence evidence by the
+Normal random-effects size evidence, so the E-step is closed form and the
+M-step maximizes responsibility-weighted versions of the base EB
+objectives. Initialization is a deterministic quantile split (the
+pipeline stays seed-free) and $K$ is chosen by BIC \citep{keribin2000}.
+
+\subsection{\REMIX{}: joint selection}\label{sec:select}
+The last $20\%$ of each training series is held out as an internal
+validation block. For every candidate partition and every $w$ on the grid
+$\{1,0.999,0.997,0.995,0.99,0.98,0.95,0.90\}$, the model is fit on the
+remaining $80\%$ and scored on the block by per-series-scaled pinball loss
+over $q\in\{0.5,0.75,0.9\}$; the winning pair $(g,w)$ is refit on the full
+window. No out-of-sample data is touched. The selector's cost is a few
+dozen closed-form fits---seconds for thousands of series.
+
+\subsection{Theory}\label{sec:theory}
+Proofs in Appendix~\ref{app:proofs}; all statements are also verified
+numerically. Fix an item; let $\hat p_T$ be classical TSB's occurrence
+estimate with smoothing $\alpha_p=1-w$ and initialization $\hat p_0$.
+
+\begin{proposition}[TSB is a corner of the plane]
+\label{prop:tsb-limit}
+For $w\in(0,1)$:
+(i) $\lim_{(\alpha,\beta)\to(0,0)}\hat\pi(w)=\bar p(w)$;
+(ii) $\hat p_T=(1-w)\sum_{t=1}^{T}w^{T-t}p_t+w^T\hat p_0$ and
+$\bar p(w)=(\hat p_T-w^T\hat p_0)/(1-w^T)$;
+(iii) hence $\bar p(w)=\hat p_T$ exactly under the self-consistent
+initialization $\hat p_0=\bar p(w)$, and $|\bar p(w)-\hat p_T|\le w^{T}$
+in general.
+\end{proposition}
+
+\begin{proposition}[Forgetting keeps pooling relevant]
+\label{prop:active}
+For every horizon $T$: $\lambda(w)\le(1+(1-w)\phi)^{-1}<1$ when $w<1$,
+whereas $\lambda(1)\to1$ as $T\to\infty$. Under forgetting, the pooled
+prior retains strictly positive weight forever---pooling and forgetting
+are complements, not substitutes.
+\end{proposition}
+
+\begin{proposition}[Tracking risk under drift]
+\label{prop:drift}
+If $p_t\sim\mathrm{Bern}(\pi_t)$ independently with
+$|\pi_t-\pi_T|\le\delta(T-t)$, then
+$|\E\bar p(w)-\pi_T|\le\delta\,w/[(1-w)(1-w^T)]$ and
+$\Var\,\bar p(w)\le\tfrac14(1-w)(1+w^T)/[(1+w)(1-w^T)]$, with the
+corresponding decomposition for the posterior mean.
+\end{proposition}
+
+\begin{corollary}\label{cor:rate}
+Balancing the bounds gives $1-w^{*}\asymp\delta^{2/3}$ (with the exact
+constant computed in the proof), worst-case MSE $O(\delta^{2/3})$, and
+$w^{*}\to1$ as $\delta\to0$: the stationary model is recovered exactly
+when nothing drifts, which is the license for selecting $w$ by
+validation rather than fixing it.
+\end{corollary}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.93\linewidth]{figs/drift_tradeoff.pdf}
+\caption{Proposition~\ref{prop:drift}'s bias--variance bounds. Stars mark
+the minimizing forgetting strength; as drift $\delta$ grows the optimum
+moves right at the $\delta^{2/3}$ rate of Corollary~\ref{cor:rate}.}
+\label{fig:tradeoff}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.93\linewidth]{figs/discount_curves.pdf}
+\caption{Validation scaled pinball vs.\ forgetting strength on all five
+panels (relative to $w{=}1$; stars = selected $w$). Every curve has an
+interior optimum, and its location tracks the panel's apparent
+nonstationarity---near-stationary RAF selects $w{=}0.997$, drifting
+Carparts selects $w{=}0.90$---matching Figure~\ref{fig:tradeoff}.}
+\label{fig:curves}
+\end{figure}
+
+Figure~\ref{fig:curves} shows the theory operating in practice: each
+dataset's validation curve is convex with an interior minimum whose
+location orders the panels by nonstationarity.
+
+Finally, the selection step itself admits a guarantee. The selector
+compares a \emph{finite} set of $M$ candidate configurations (here
+$M=24$: eight discounts $\times$ three partitions) by their average
+scaled pinball loss on $n$ held-out validation observations.
+
+\begin{proposition}[Oracle inequality for the selector]
+\label{prop:oracle}
+Let $R(c)$ denote the expected validation risk of candidate $c$ and
+$\hat R(c)$ its empirical average over the $n$ validation observations.
+Assume the per-observation scaled pinball scores lie in $[0,B]$ and are
+independent across items conditional on the fitted candidates. Then the
+selected $\hat c=\arg\min_c \hat R(c)$ satisfies, with probability at
+least $1-\eta$,
+\[
+R(\hat c)\;\le\;\min_{c} R(c)\;+\;B\sqrt{\frac{2\log(2M/\eta)}{n}} .
+\]
+\end{proposition}
+
+The proof (Appendix~\ref{app:proofs}) is a Hoeffding bound with a union
+over the $M$ candidates; the content is in the calibration of the
+constants. On Online Retail the validation block contains
+$n\approx8\times10^4$ observations, so with $M=24$ the selection penalty
+is below $2\%$ of the score scale---which is precisely why the empirical
+``plane is flat near its optimum'' finding of
+Section~\ref{sec:selector} is expected rather than fortunate: the
+selector reliably avoids the bad corners of the plane, and among
+near-optimal corners its choice is statistically indifferent.
+Within-series temporal dependence makes validation scores of a given
+item correlated; the bound treats items (of which there are thousands)
+as the independent units, which we state as an assumption rather than
+prove from mixing conditions.
+
+\begin{proposition}[Pooling reduces risk; classical credibility]
+\label{prop:credibility}
+Under model \eqref{eq:model} with known hyperparameters, the posterior
+mean \eqref{eq:disc-post} is the Bayes estimator of $\pi_i$ under
+squared loss, and its Bayes risk is strictly smaller than that of the
+per-item empirical rate $\bar p_i$ whenever $\phi_g>0$; the optimal
+weight is exactly the credibility factor
+$\lambda_i=n_i/(n_i+\phi_g)$ of \citet{buhlmann1967}. (Statement and
+classical proof in Appendix~\ref{app:proofs}.)
+\end{proposition}
+
+Proposition~\ref{prop:credibility} is not new---it is the
+B\"uhlmann--Straub credibility theorem specialized to Bernoulli
+occurrences---but stating it makes the division of labor exact: pooling
+carries the cross-sectional risk reduction
+(Proposition~\ref{prop:credibility}), forgetting carries the temporal
+adaptation (Propositions~\ref{prop:tsb-limit}--\ref{prop:drift}), and
+validation carries the choice between them
+(Proposition~\ref{prop:oracle}).
+
+\subsection{Computational profile}\label{sec:complexity}
+One pass computes all statistics in $O(\sum_i T_i)$; each EB fit is a
+two-parameter optimization per group; mixture EM adds $O(NK)$ per
+iteration; selection multiplies a constant number of fits; prediction is
+$O(N)$ (point) or $O(NQ)$ (quantiles). Everything is
+deterministic---repeated runs are bit-identical, which we verify with an
+automated test in the released code.
+
+% =========================================================================
+\section{Experiments}\label{sec:experiments}
+% =========================================================================
+
+\subsection{Setup}\label{sec:setup}
+\textbf{Datasets.} Two daily panels---\textbf{Online Retail} \citep{chen2015}
+(3{,}649 series; first third initializes, rest evaluates) and a
+seed-controlled 5{,}000-series \textbf{M5} sample \citep{makridakis2022}
+(init ratio $2/3$; the sample keeps the slower baselines affordable, and
+a full-scale 30{,}490-series run against the fast classical methods
+confirms it is representative---\REMIX{} is best on all three point
+metrics at full scale, Appendix~\ref{app:extra})---plus the monthly
+intermittent suite of
+\citet{damato2025} with their exact last-$h$ holdout: \textbf{Auto}
+(3{,}000 series, $T{=}18$, $h{=}6$), \textbf{Carparts} (2{,}509, $T{=}45$,
+$h{=}6$), \textbf{RAF} (5{,}000, $T{=}72$, $h{=}12$).
+\textbf{Baselines.} Croston, SBA, TSB, ADIDA, IMAPA, AutoARIMA, AutoTheta
+(StatsForecast); per-series autoregressive Tweedie GLM; split-conformal
+wrappers (CP-$\ast$) of the point methods for probabilistic comparison;
+iETS \citep{svetunkov2023iets}; neural comparisons in
+Appendix~\ref{app:extra}.
+\textbf{Protocols.} The fixed-origin protocol fits once on the
+initialization window and scores the full evaluation span; on Online
+Retail this spans several months, matching review cycles in slow-moving
+spare-parts management where a demand-rate estimate is fixed between
+periodic replenishment reviews. Because such a protocol structurally
+favors stable intensity estimation, we complement it in two ways:
+Figure~\ref{fig:horizon} decomposes error by forecast horizon, showing
+the advantage is not an artifact of averaging over long horizons, and
+Section~\ref{sec:walkforward} evaluates all methods under strict
+block-wise walk-forward updating.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.93\linewidth]{figs/horizon_decomp.pdf}
+\caption{Online Retail: RMSE by forecast-horizon bucket. \REMIX{} has
+the lowest RMSE in \emph{every} bucket, from days 1--7 onward; its edge
+is not produced by long-horizon averaging. (On MAE the per-bucket
+differences among the leading methods are within 1--2\%.)}
+\label{fig:horizon}
+\end{figure}
+
+\textbf{Metrics.} Point: MAE and RMSSE (per-series scaled). Probabilistic:
+scaled pinball loss (SPL, M5-Uncertainty scaling) with emphasis on
+$q\ge0.75$, plus Coverage@80/AIW@80. All quantiles of all methods are
+zero-truncated and monotonized. \REMIX{} is reported \emph{raw}---the
+optional calibration layer is off unless stated. Paired per-series
+significance tests are Holm-adjusted.
+
+\subsection{Main results}\label{sec:main-results}
+
+\begin{table*}[t]
+\centering
+\caption{\textbf{Point forecasting} across the five panels: MAE and RMSSE
+(lower is better; bold best, underline second, computed over the
+non-degenerate methods). The deliberately included degenerate rows (Zero,
+Naive-last) are excluded from ranking: the Zero forecast attains the
+lowest MAE on three panels, which is a known pathology of MAE on
+intermittent data and the reason RMSSE and probabilistic metrics carry
+the evaluation (see text). \REMIX{} is one model with its pooling
+structure and discount selected on the internal validation
+split---selected configuration shown beneath the table.}
+\label{tab:point}
+\small
+\setlength{\tabcolsep}{3.4pt}
+\begin{tabular}{lcc@{\hspace{10pt}}cc@{\hspace{10pt}}cc@{\hspace{10pt}}cc@{\hspace{10pt}}cc}
+\toprule
+ & \multicolumn{2}{c}{Online Retail} & \multicolumn{2}{c}{M5} & \multicolumn{2}{c}{Auto} & \multicolumn{2}{c}{Carparts} & \multicolumn{2}{c}{RAF}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}
+Model & MAE & RMSSE & MAE & RMSSE & MAE & RMSSE & MAE & RMSSE & MAE & RMSSE\\
+\midrule
+CrostonClassic & 6.3294 & 5.1051 & 1.2345 & 2.3539 & 3.4056 & 1.1488 & 0.6792 & 1.0981 & 2.7315 & 1.6280\\
+CrostonSBA & 6.1953 & 5.0692 & \secondbest{1.2076} & 2.3517 & \secondbest{3.3325} & \best{1.1451} & 0.6628 & 1.0935 & 2.6520 & 1.6272\\
+TSB & \best{5.5736} & 4.8031 & 1.2672 & 2.3612 & 3.6587 & 1.2066 & \best{0.5396} & 1.0156 & \best{2.1660} & 1.6570\\
+ADIDA & 5.6860 & \secondbest{4.7967} & 1.2274 & 2.3398 & 3.4079 & 1.1545 & 0.5556 & 1.0244 & 2.2977 & \best{1.6245}\\
+IMAPA & 5.7000 & 4.7970 & 1.2317 & 2.3280 & 3.4143 & 1.1555 & \secondbest{0.5524} & 1.0126 & \secondbest{2.2850} & 1.6259\\
+AutoARIMA & 6.5494 & 4.8175 & 1.2283 & 2.3169 & 3.4417 & 1.1745 & 0.5822 & \secondbest{1.0105} & 2.3153 & 1.6262\\
+AutoTheta & 8.2862 & 4.8550 & 1.2988 & \secondbest{2.3143} & 3.7490 & 1.2215 & 0.5704 & \best{0.9966} & 2.3687 & 1.6399\\
+\midrule
+Zero & 4.7549 & 4.8089 & 1.2995 & 2.4629 & 4.1444 & 1.4454 & 0.3867 & 1.0949 & 1.1717 & 1.6345\\
+Naive-last & 6.0570 & 4.8324 & 1.3750 & 2.5450 & 4.3529 & 1.3818 & 0.5399 & 1.1408 & 1.8340 & 1.7644\\
+\midrule
+\REMIX{} (ours) & \secondbest{5.6639} & \best{4.7879} & \best{1.1774} & \best{2.2724} & \best{3.3269} & \secondbest{1.1455} & 0.5714 & 1.0286 & 2.3233 & \secondbest{1.6256}\\
+\bottomrule
+\end{tabular}
+
+\smallskip
+{\footnotesize Selected $(g,w)$ per dataset --- Online Retail:
+(mixture, $0.98$); M5: (mixture, $0.90$); Auto: (mixture, $0.995$);
+Carparts: (mixture, $0.90$); RAF: (mixture, $0.997$). The selector chose
+the learned partition on every panel.}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{\textbf{Probabilistic forecasting}: scaled pinball loss, mean
+over $q\in\{0.1,0.25,0.5,0.75,0.9\}$ and at the inventory-critical q90.
+\REMIX{} predictive distributions are raw (no post-hoc calibration);
+marks rank the non-degenerate methods.
+$^{\dagger}$On RAF the degenerate all-zero forecast attains marginally
+lower SPL than every method---evidence that $q\le0.9$ evaluation
+saturates on this ultra-sparse panel (see text).}
+\label{tab:prob}
+\small
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lcc@{\hspace{9pt}}cc@{\hspace{9pt}}cc@{\hspace{9pt}}cc@{\hspace{9pt}}cc}
+\toprule
+ & \multicolumn{2}{c}{Online Retail} & \multicolumn{2}{c}{M5} & \multicolumn{2}{c}{Auto} & \multicolumn{2}{c}{Carparts} & \multicolumn{2}{c}{RAF}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}
+Model & Mean & q90 & Mean & q90 & Mean & q90 & Mean & q90 & Mean & q90\\
+\midrule
+AutoARIMA & \secondbest{1.0159} & 1.6365 & 2.9721 & 3.1439 & \secondbest{0.3189} & \secondbest{0.2659} & 0.4084 & 0.4897 & 0.4020 & 0.5910\\
+AutoTheta & 1.0193 & \secondbest{1.6285} & 2.2205 & 2.7309 & 0.3403 & 0.2760 & 0.3925 & \best{0.4697} & 0.4104 & 0.5956\\
+CP-Croston & 1.4595 & 2.6916 & 1.8110 & 2.2595 & 0.3260 & 0.3105 & 0.4012 & 0.5433 & 0.3322 & 0.4927\\
+CP-SBA & 1.4618 & 2.7806 & 1.8035 & 2.2589 & 0.3256 & 0.3153 & 0.3982 & 0.5418 & 0.3290 & 0.4920\\
+CP-TSB & 1.1709 & 2.6418 & 1.9930 & \best{2.1521} & 0.3459 & 0.3150 & 0.3783 & \secondbest{0.4842} & 0.3814 & 0.4986\\
+CP-ADIDA & 1.1251 & 2.5118 & 1.8011 & 2.2626 & 0.3275 & 0.3082 & 0.3571 & 0.4982 & \secondbest{0.3097} & 0.4905\\
+CP-IMAPA & 1.1292 & 2.5212 & \secondbest{1.7945} & \secondbest{2.2304} & 0.3279 & 0.3084 & \secondbest{0.3561} & 0.4908 & 0.3116 & 0.4907\\
+Tweedie & 1.1477 & 1.7458 & 3.8859 & 5.0919 & 0.3221 & 0.2783 & 0.4776 & 0.6897 & 0.3121 & 0.5312\\
+iETS & 1.0878 & 1.9332 & 2.4291 & 3.4758 & 0.3448 & 0.3252 & 0.4561 & 0.5646 & 0.3494 & \secondbest{0.4900}\\
+\midrule
+Zero & 0.9224 & 1.6604 & 1.9590 & 3.5262 & 0.5612 & 1.0102 & 0.3736 & 0.6725 & 0.2669$^{\dagger}$ & 0.4805$^{\dagger}$\\
+\midrule
+\REMIX{} (ours) & \best{0.8843} & \best{1.5262} & \best{1.6992} & 2.4688 & \best{0.2957} & \best{0.2647} & \best{0.3305} & 0.4916 & \best{0.2681} & \best{0.4862}\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.93\linewidth]{figs/spl_profile.pdf}
+\caption{Scaled pinball by quantile on Online Retail. Conformal wrappers
+are competitive at central quantiles but degrade sharply at q90, exactly
+where inventory decisions live \citep{kolassa2016}; \REMIX{} dominates the
+entire profile.}
+\label{fig:profile}
+\end{figure}
+
+Tables~\ref{tab:point} and \ref{tab:prob} contain the headline evidence.
+\textbf{Point:} \REMIX{} takes the most first places (4 of 10 columns:
+both M5 columns, Online Retail RMSSE, Auto MAE) and is in the top two on
+7 of 10; TSB follows with three MAE wins, and no other baseline is best
+more than once. More telling than the win count is the consistency: on the three columns
+where \REMIX{} is outside the top two (both Carparts columns and RAF
+MAE) it sits within 8\% of the leader, whereas every classical method
+has at least one panel where it trails badly (TSB's Auto MAE is 10\%
+off; AutoTheta's Online Retail MAE is 49\% off). On the short monthly panels the
+differences among leading methods are small; the decision-relevant
+comparison is probabilistic \citep{kolassa2016}. \textbf{Probabilistic:} \REMIX{} attains the best mean SPL on
+\emph{all five} panels---by 13\% over the runner-up on Online Retail, 5\%
+on M5, and 7--14\% on the monthly suite---and the best q90 on Online
+Retail, Auto, and RAF. Figure~\ref{fig:profile} shows the mechanism on
+the retail panel: conformal wrappers are competitive near the median but
+collapse at upper quantiles, while the zero-inflated log-normal EB law
+keeps sharp, calibrated tails (on M5, CP wrappers remain strong at q90
+specifically; \REMIX{}'s lead there is the full distribution). iETS and
+Tweedie trail \REMIX{} at every reported cell. The raw law over-covers
+mildly on Online Retail (Coverage@80 $=0.896$, AIW $10.34$;
+Table~\ref{tab:coverage}). With the optional calibration layer switched
+on \emph{in both configurations being compared}, the forgetting
+configuration reaches coverage $0.837$ at AIW $8.96$ versus the
+stationary configuration's $0.845$ at $10.03$---$11\%$ narrower
+intervals at closer-to-nominal coverage.
+
+\paragraph{Degenerate baselines as measurement instruments.} We include
+the all-zero and naive-last forecasts deliberately, because on
+intermittent data they calibrate what the metrics can and cannot see.
+The Zero forecast attains the lowest MAE on three of five panels (e.g.,
+$4.75$ on Online Retail, below every real method): absolute error is
+minimized by predicting the majority class, which is zero. This is the
+quantitative footnote to every MAE column in Table~\ref{tab:point}---in
+particular, TSB's three MAE wins should be read in light of the fact
+that an even more zero-leaning forecast wins those columns
+outright---and it is why RMSSE and the probabilistic metrics carry our
+evaluation \citep{kolassa2016}. The same instrument exposes a limit of
+quantile evaluation itself: on RAF, the sparsest panel, the Zero
+forecast attains marginally lower mean SPL than every method
+($0.2669$ vs.\ \REMIX{}'s $0.2681$), because for most RAF series the
+true demand quantiles up to $q{=}0.9$ \emph{are} zero. On such panels
+only the far tail ($q>0.9$) and interval-based diagnostics
+(Table~\ref{tab:coverage}) discriminate between methods; among
+non-degenerate forecasters, \REMIX{} leads.
+
+\subsection{What does the selector learn?}\label{sec:selector}
+
+\begin{table}[t]
+\centering
+\caption{Learned mixture components on Online Retail ($K{=}5$ by BIC),
+sorted by occurrence level. $\phi_k=\alpha_k+\beta_k$ is the pooling
+strength the component assigns to its members.}
+\label{tab:components}
+\small
+\setlength{\tabcolsep}{4.2pt}
+\begin{tabular}{ccccc}
+\toprule
+Comp. & Weight & Occ.\ prior mean & $\phi_k$ & Median size\\
+\midrule
+1 & 0.20 & 0.048 & 79.4 & 1.4\\
+2 & 0.19 & 0.096 & 27.8 & 5.5\\
+3 & 0.10 & 0.155 & 495.9 & 2.5\\
+4 & 0.33 & 0.320 & 15.5 & 4.4\\
+5 & 0.19 & 0.571 & 12.3 & 12.2\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three consistent behaviors emerge across panels, and we state the third
+with the bluntness it deserves. \textbf{(i) The plane is flat near its
+optimum, exactly as Proposition~\ref{prop:oracle} predicts.} Re-running
+the selector with validation ratios $\{0.1,0.2,0.3\}$ on Online Retail
+selects (global, $0.95$), (mixture, $0.98$), and (mixture, $0.95$)
+respectively, yet all three land in a tight out-of-sample band (MAE
+$5.53$--$5.66$, RMSSE $4.788$--$4.793$)---each better than the
+stationary corner's MAE $5.766$. With $n\approx8\times10^4$ validation
+points and $24$ candidates, the oracle bound makes near-optimal
+configurations statistically indistinguishable; the selector's job is to
+avoid the bad corners, not to locate a knife-edge optimum.
+\textbf{(ii) The selected discount tracks apparent drift}
+(Figure~\ref{fig:curves}): near-stationary RAF selects $w{=}0.997$ while
+drifting Carparts and M5 select $w{=}0.90$, the qualitative signature of
+Corollary~\ref{cor:rate}. \textbf{(iii) The selector consistently picks
+the learned partition ($K\in\{4,5,6\}$ on all five panels)---and this
+particular choice is largely inconsequential.} On Online Retail the
+ablation of Section~\ref{sec:ablation} shows all three partitions within
+$0.7\%$ of one another on every metric, point and probabilistic alike;
+the five-panel grid (Appendix~\ref{app:extra}) repeats the pattern with
+somewhat larger spreads on the sparsest panels---on RAF the single pool
+with forgetting is in fact the strongest cell, and the selector's
+preference for the mixture there costs a few percent of MAE. By
+finding~(i) the selector cannot distinguish near-optimal partitions, and
+these differences sit inside the oracle band. The
+learned partition's case is therefore not accuracy but structure: it
+removes the taxonomy's hand-set thresholds at no cost, gives its only
+consistent within-family edge in the sparsest cold-start bins, and---as
+Table~\ref{tab:components} shows---produces an interpretable occupancy
+gradient (occurrence prior means $0.05\to0.57$, larger pooling strengths
+$\phi_k$ for sparser components, up to $496$) that refines the
+Intermittent/Lumpy boundary rather than reproducing the CV$^2$ split.
+Practitioners who prefer a single global pool lose nothing measurable on
+aggregate metrics; the machinery's value is that this is now a
+\emph{finding} rather than an assumption.
+
+\subsection{Ablation: walking the model plane}\label{sec:ablation}
+
+\begin{table}[t]
+\centering
+\caption{Ablation on Online Retail: every corner of the plane. Each row
+is an independent run (its own $w$ selection on the internal split where
+marked ``auto'', full-window refit); probabilistic columns are the raw
+pipeline ($B{=}20$). TSB defines no predictive distribution (its
+conformal wrapper appears in Table~\ref{tab:prob}).}
+\label{tab:ablation}
+\small
+\setlength{\tabcolsep}{2.9pt}
+\begin{tabular}{llcccccc}
+\toprule
+Pooling & Forget & MAE & RMSE & RMSSE & SPL & SPL$_{90}$ & AIW\\
+\midrule
+none (TSB) & fixed & 5.5736 & 18.7272 & 4.8031 & --- & --- & ---\\
+global & off & 5.7623 & \best{17.6892} & \best{4.7851} & 0.8830 & 1.5195 & 10.51\\
+taxonomy & off & 5.7663 & 17.6930 & 4.7875 & \best{0.8826} & \best{1.5173} & 10.56\\
+learned & off & 5.8126 & 17.7064 & 4.7876 & 0.8835 & 1.5220 & 10.79\\
+global & auto & \best{5.5325} & 17.8386 & 4.7901 & 0.8849 & 1.5268 & \best{9.25}\\
+taxonomy & auto & \secondbest{5.5624} & 17.8421 & 4.7897 & 0.8846 & 1.5254 & 9.43\\
+learned & auto & 5.6925 & 17.8765 & 4.7902 & 0.8869 & 1.5343 & 10.69\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:ablation} walks the plane on Online Retail, and its
+message is sharper than a component checklist. \textbf{The forgetting
+axis is decisive.} Stationary configurations cede MAE to classical
+TSB---the cost of ignoring obsolescence; switching forgetting on wins
+MAE back at every pooling structure (best overall $5.5325$, ahead of
+TSB's $5.5736$) at a small RMSE price, and buys the probabilistic
+pipeline $12\%$ sharper intervals (AIW $10.51\!\to\!9.25$) at coverage
+closer to nominal ($0.901\!\to\!0.892$). \textbf{The pooling structure
+is second-order---but pooling itself is not.} Across
+global/taxonomy/learned partitions, every metric moves by less than
+$0.7\%$ (SPL within $0.8826$--$0.8869$), so the choice \emph{among}
+partitions is inconsequential on this panel; what carries the risk
+reduction is having a pooled prior at all
+(Proposition~\ref{prop:credibility}), plus the forgetting axis. Within
+the family, the learned partition's only consistent edge over the single
+pool appears in the sparsest cold-start bins (e.g., $-4.5\%$ MAE for
+items with $\le1$ positive observation), while it removes the
+taxonomy's hand-set thresholds at no aggregate cost. Paired tests: forgetting improves per-series
+MAE over the stationary model with Holm-adjusted $p_t<10^{-24}$
+(Wilcoxon $p<10^{-7}$), and over every baseline on per-series RMSE with
+$p<0.005$. Against TSB on MAE the comparison is genuinely two-sided and we report
+it as such: TSB is marginally ahead on the typical series (median
+per-series difference $+0.29$, Wilcoxon $p<10^{-166}$), while forgetting
+wins by large margins on the difficult series, producing a mean
+difference of $-0.110$ in our favor that does not reach $t$-test
+significance ($p_t=0.079$). The same asymmetry explains why TSB pays for
+its MAE with the heaviest RMSE of any configuration in the table:
+hierarchical pooling suppresses exactly the loss tail where TSB is
+weakest.
+
+\subsection{Sequential (walk-forward) operation}\label{sec:walkforward}
+
+\begin{table}[t]
+\centering
+\caption{Online Retail, strict walk-forward (7-day blocks; every model
+refits or updates per block). The three hierarchical rows differ only in
+the forgetting configuration. Probabilistic walk-forward results are in
+Appendix~\ref{app:extra}.}
+\label{tab:walkforward}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccc}
+\toprule
+Model & MAE & RMSE & RMSSE\\
+\midrule
+CrostonClassic & 5.692 & 16.937 & 4.854\\
+CrostonSBA & 5.586 & 16.931 & 4.836\\
+TSB & 5.434 & 17.754 & 4.815\\
+ADIDA & \best{5.320} & \best{16.728} & \secondbest{4.637}\\
+IMAPA & \secondbest{5.332} & \secondbest{16.745} & \best{4.632}\\
+AutoARIMA & 5.482 & 16.904 & 5.105\\
+AutoTheta & 5.394 & 16.836 & 4.735\\
+\midrule
+Stationary configuration ($w{=}1$) & 5.586 & 17.260 & 4.725\\
+Forgetting configuration (tax., $0.95$) & 5.411 & 17.059 & 4.682\\
+\REMIX{} (online) & 5.474 & 17.244 & 4.761\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fixed-origin evaluation isolates stable intensity estimation; real
+deployments update sequentially. Table~\ref{tab:walkforward} runs a
+strict block-wise walk-forward protocol in which every baseline refits
+each block and the hierarchical models update online sufficient
+statistics without refitting. Forgetting improves walk-forward MAE in
+both configurations we test: the \REMIX{}-selected pair (mixture,
+$w{=}0.98$) improves MAE $5.586\!\to\!5.474$ but concedes RMSSE
+($4.725\!\to\!4.761$)---its per-block occurrence discounting, layered on
+the discounted initialization, trades some scaled-error stability for
+responsiveness---while the stronger-forgetting configuration (taxonomy,
+$w{=}0.95$) improves both metrics ($5.411$/$4.682$), closing most of the
+gap to the temporal-aggregation leaders, which are strongest precisely
+in this regime because per-block refits give them their own form of
+adaptation. That the fixed-origin selector picks a milder discount than
+walk-forward would reward is another instance of the
+criterion-alignment point of Section~\ref{sec:limitations}. The probabilistic picture
+is unchanged from the fixed protocol: the hierarchical predictive law
+keeps the best q90 (2.461) and best mean pinball (1.854 vs.\ 2.30--2.58)
+against all conformal wrappers under identical walk-forward updating
+(Appendix~\ref{app:extra}).
+
+\subsection{Statistical significance and uncertainty quality}
+\label{sec:significance}
+
+\begin{table}[t]
+\centering
+\caption{Paired per-series tests on Online Retail (3{,}649 series):
+forgetting configuration vs.\ each alternative on per-series MAE.
+Negative favors forgetting; $p$-values Holm-adjusted. On per-series RMSE
+the forgetting configuration beats \emph{every} baseline at $p<0.005$.}
+\label{tab:significance}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccc}
+\toprule
+vs. & Mean diff & $p_t$ & $p_{\mathrm{Wilcoxon}}$\\
+\midrule
+Stationary hierarchical & $-0.234$ & $<\!10^{-24}$ & $<\!10^{-7}$\\
+TSB & $-0.110$ & $0.079$ & $<\!10^{-166}$\\
+ADIDA & $-0.105$ & $<\!10^{-4}$ & $<\!10^{-71}$\\
+IMAPA & $-0.118$ & $<\!10^{-4}$ & $<\!10^{-85}$\\
+CrostonSBA & $-0.941$ & $<\!10^{-29}$ & $<\!10^{-58}$\\
+AutoARIMA & $-0.959$ & $<\!10^{-15}$ & $<\!10^{-5}$\\
+AutoTheta & $-2.713$ & $<\!10^{-83}$ & $<\!10^{-99}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Raw \REMIX{} interval quality across the five panels (nominal
+80\%). Mild over-coverage is the expected signature of the log-normal
+tail on sparse counts; the optional calibration layer trades it toward
+nominal at 11\% narrower width (Section~\ref{sec:main-results}).}
+\label{tab:coverage}
+\small
+\setlength{\tabcolsep}{4.6pt}
+\begin{tabular}{lccccc}
+\toprule
+ & OR & M5 & Auto & Carparts & RAF\\
+\midrule
+Coverage@80 & 0.896 & 0.830 & 0.859 & 0.910 & 0.922\\
+AIW@80 & 10.34 & 2.58 & 9.41 & 1.23 & 0.76\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:significance} confirms the ablation's headline is
+systematic rather than incidental: the forgetting configuration improves
+per-series MAE over the stationary model at $p<10^{-24}$ and is never
+significantly worse than any baseline on either metric. The one nuanced
+case is TSB, whose median-series MAE is marginally better while its
+loss tail is far heavier---consistent with Table~\ref{tab:ablation},
+where TSB's RMSE is worst among all hierarchical configurations.
+Table~\ref{tab:coverage} reports interval quality: against the nominal
+$0.80$, raw coverage lies in $[0.830, 0.922]$ with no tuning---M5 sits
+nearly on target, while RAF's $0.922$ is the largest deviation
+(its very short intervals, AIW $0.76$, make the discrete zero mass
+dominate); Section~\ref{sec:limitations} discusses this over-coverage
+explicitly.
+
+\paragraph{Cross-dataset comparison.} Following standard practice we
+also test across datasets. Figure~\ref{fig:cd} ranks per-series scaled
+squared errors (the RMSSE numerator) over all $16{,}833$ rankable series
+from the five panels with a Friedman test and Nemenyi critical
+difference. The temporal-aggregation methods lead the \emph{typical}
+series narrowly---\REMIX{} is statistically indistinguishable from IMAPA
+and $0.09$ average-rank behind ADIDA at $\mathrm{CD}=0.08$---while TSB,
+the MAE champion of Table~\ref{tab:point}, ranks \emph{last}: rank
+statistics weight every series equally, and zero-leaning forecasts pay
+on the series that matter. Diebold--Mariano-style paired tests on the
+same per-series losses give \REMIX{} a significant win in $25$ of $35$
+dataset$\times$baseline comparisons and a significant loss in $2$
+(IMAPA on Carparts, ADIDA on RAF), matching the two panels where
+Table~\ref{tab:point} already showed it trailing.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.93\linewidth]{figs/cd_diagram.pdf}
+\caption{Average ranks of per-series scaled squared errors across all
+five panels with Nemenyi critical difference ($\alpha{=}0.05$). Lower is
+better.}
+\label{fig:cd}
+\end{figure}
+
+\paragraph{Robustness of the selector.} Beyond the validation-ratio
+sweep of Section~\ref{sec:selector}, the conjugate variance prior
+$\nu$ barely moves the probabilistic results
+(mean SPL $0.8841/0.8841/0.8843/0.8844$ for $\nu\in\{5,10,20,50\}$ on
+Online Retail, coverage varying by less than $0.2$ points), matching the
+stability one expects from a conjugate variance prior with moderate
+degrees of freedom; and halving the discount grid to five points never changes the
+selected structure on any panel and moves $w$ only to the nearest
+neighboring grid point on two of the five. The selector is doing coarse
+structural triage, and coarse triage is stable.
+
+\subsection{Efficiency}\label{sec:efficiency}
+On Online Retail (CPU): the base fit-plus-predict is $0.3$\,ms/series;
+full \REMIX{} selection (24 candidate fits) $6$\,ms/series; AutoARIMA
+$19$\,ms/series; neural baselines are orders of magnitude slower at equal
+or worse accuracy (Appendix~\ref{app:extra}). Determinism makes results
+bit-reproducible without seeds.
+
+% =========================================================================
+\section{Limitations}\label{sec:limitations}
+% =========================================================================
+Seven boundaries of the present study are worth stating explicitly.
+\textbf{(1)}~The log-normal size law keeps every update closed form but
+its tail can be conservative on panels with heavy-tailed spikes:
+Carparts' q90 favors AutoTheta and M5's q90 favors conformal wrappers
+even though \REMIX{} wins both means; a Gamma size block (conjugate in
+the same architecture) is the natural next instantiation.
+\textbf{(2)}~Raw intervals over-cover on the sparsest panels (up to
+$0.922$ against nominal $0.80$ on RAF, Table~\ref{tab:coverage}), and on
+RAF the quantile evaluation itself saturates: the all-zero forecast
+attains marginally lower mean SPL than every method, so $q\le0.9$
+scores there discriminate weakly and far-tail or cost-based evaluation
+is needed. \textbf{(3)}~The mixture assignment is hard; a
+soft-responsibility predictive mixture is a strict generalization that
+would add one matrix multiply. \textbf{(4)}~Hyperparameter uncertainty
+enters only through bootstrap averaging of the EB fit, not full
+posterior propagation. \textbf{(5)}~The selection criterion is a single
+pinball-based score; aligning it with the deployment loss is trivial to
+implement---on Online Retail, selecting by validation MAE instead picks
+(global pool, $w{=}0.90$), whose out-of-sample MAE of $5.508$ beats
+every configuration in Table~\ref{tab:ablation} and every
+baseline---and a systematic study of criterion alignment is left to
+future work. \textbf{(6)}~We do not compare directly against external
+hierarchical Bayesian implementations
+\citep{chapados2014,seeger2016,pitkin2024}: they require sampling or
+variational machinery whose faithful reproduction at our scale was out
+of budget, so our hierarchical comparisons are internal (the $w{=}1$
+column of the ablation) plus iETS as the likelihood-based state-space
+representative; claims about those methods are limited to their
+published computational profiles. \textbf{(7)}~The Deep Renewal Process
+comparison could not be re-executed in the current environment
+(unmaintained MXNet dependency) and is reported as indicative only.
+
+% =========================================================================
+\section{Conclusion}\label{sec:conclusion}
+% =========================================================================
+Pooling strength and forgetting speed are the two structural decisions of
+intermittent-demand forecasting, and neither needs to be hard-coded.
+\REMIX{} selects both---plus the pooling partition itself---inside a
+closed-form empirical-Bayes pipeline whose noninformative corner is
+exactly classical TSB. The theory (exact recovery, always-active
+shrinkage, $\delta^{2/3}$ tracking) predicts the selector's empirical
+behavior, and the resulting single model leads mean scaled pinball on all
+five public panels while running in milliseconds. Extensions we see as
+natural: covariates via logistic/mixed-effects links, alternative size
+laws (Gamma), cross-item dependence, and cost-aware selection criteria
+tied to service levels.
+
+% =========================================================================
+\section*{Reproducibility Statement}
+All five datasets are public (UCI 352; Kaggle M5-Accuracy; the gluon-ts
+\texttt{intermittent-datasets} branch for Auto and RAF; Zenodo record
+4656022 for Carparts); conversion and preprocessing scripts are included
+in the released code. The full pipeline is deterministic---closed-form
+EB, seed-free quantile-based EM initialization---so no seed policy is
+required for the forecaster itself (the only stochastic elements are the
+seed-controlled M5 subsample and the $B{=}20$ bootstrap, both fixed at
+seed 42), and an automated test asserts that two end-to-end runs are
+bit-identical. Every table maps to one experiment directory via a
+manifest file, and each run writes its selection diagnostics (chosen
+partition, discount, BIC curves) alongside its metrics. Hardware and
+timing methodology are specified in Appendix~\ref{app:implementation};
+the complete experiment suite runs on one CPU workstation in under a
+day, dominated by the statistical baselines rather than \REMIX{}. An
+anonymized code repository will accompany the submission.
+
+\begin{thebibliography}{99}
+
+\bibitem[B\"uhlmann(1967)]{buhlmann1967}
+H.~B\"uhlmann.
+\newblock Experience rating and credibility.
+\newblock \emph{ASTIN Bulletin}, 4(3):199--207, 1967.
+
+\bibitem[Chapados(2014)]{chapados2014}
+N.~Chapados.
+\newblock Effective Bayesian modeling of groups of related count time series.
+\newblock In \emph{ICML}, 2014.
+
+\bibitem[Chen(2015)]{chen2015}
+D.~Chen.
+\newblock Online Retail dataset, UCI Machine Learning Repository, 2015.
+
+\bibitem[Croston(1972)]{croston1972}
+J.~D. Croston.
+\newblock Forecasting and stock control for intermittent demands.
+\newblock \emph{Operational Research Quarterly}, 23(3):289--303, 1972.
+
+\bibitem[Damato et~al.(2025)]{damato2025}
+S.~Damato, D.~Azzimonti, and G.~Corani.
+\newblock Forecasting intermittent time series with Gaussian processes and
+  Tweedie likelihood.
+\newblock \emph{International Journal of Forecasting}, 2025.
+
+\bibitem[Gibbs and Cand\`es(2021)]{gibbs2021}
+I.~Gibbs and E.~Cand\`es.
+\newblock Adaptive conformal inference under distribution shift.
+\newblock In \emph{NeurIPS}, 2021.
+
+\bibitem[Gneiting and Raftery(2007)]{gneiting2007}
+T.~Gneiting and A.~E. Raftery.
+\newblock Strictly proper scoring rules, prediction, and estimation.
+\newblock \emph{JASA}, 102(477):359--378, 2007.
+
+\bibitem[Ibrahim and Chen(2000)]{ibrahimchen2000}
+J.~G. Ibrahim and M.-H. Chen.
+\newblock Power prior distributions for regression models.
+\newblock \emph{Statistical Science}, 15(1):46--60, 2000.
+
+\bibitem[Keribin(2000)]{keribin2000}
+C.~Keribin.
+\newblock Consistent estimation of the order of mixture models.
+\newblock \emph{Sankhy\=a A}, 62(1):49--66, 2000.
+
+\bibitem[Kolassa(2016)]{kolassa2016}
+S.~Kolassa.
+\newblock Evaluating predictive count data distributions in retail sales
+  forecasting.
+\newblock \emph{International Journal of Forecasting}, 32(3):788--803, 2016.
+
+\bibitem[Kourentzes and Petropoulos(2016)]{kourentzes2016}
+N.~Kourentzes and F.~Petropoulos.
+\newblock Forecasting with multivariate temporal aggregation.
+\newblock \emph{Int.\ J.\ Production Economics}, 181:145--153, 2016.
+
+\bibitem[Lei et~al.(2018)]{lei2018}
+J.~Lei, M.~G'Sell, A.~Rinaldo, R.~J. Tibshirani, and L.~Wasserman.
+\newblock Distribution-free predictive inference for regression.
+\newblock \emph{JASA}, 113(523):1094--1111, 2018.
+
+\bibitem[Makridakis et~al.(2022)]{makridakis2022}
+S.~Makridakis, E.~Spiliotis, and V.~Assimakopoulos.
+\newblock M5 accuracy competition: Results, findings, and conclusions.
+\newblock \emph{International Journal of Forecasting}, 38(4):1346--1364, 2022.
+
+\bibitem[Montero-Manso and Hyndman(2021)]{monteromanso2021}
+P.~Montero-Manso and R.~J. Hyndman.
+\newblock Principles and algorithms for forecasting groups of time
+  series: Locality and globality.
+\newblock \emph{International Journal of Forecasting}, 37(4):1632--1653,
+  2021.
+
+\bibitem[Nikolopoulos et~al.(2011)]{nikolopoulos2011}
+K.~Nikolopoulos, A.~A. Syntetos, J.~E. Boylan, F.~Petropoulos, and
+  V.~Assimakopoulos.
+\newblock An aggregate--disaggregate intermittent demand approach (ADIDA).
+\newblock \emph{JORS}, 62(3):544--554, 2011.
+
+\bibitem[Pitkin et~al.(2024)]{pitkin2024}
+J.~Pitkin, I.~Manolopoulou, and G.~Ross.
+\newblock Bayesian hierarchical modelling of sparse count processes in
+  retail analytics.
+\newblock \emph{Annals of Applied Statistics}, 18(2):946--965, 2024.
+
+\bibitem[Salinas et~al.(2020)]{salinas2020}
+D.~Salinas, V.~Flunkert, J.~Gasthaus, and T.~Januschowski.
+\newblock DeepAR: Probabilistic forecasting with autoregressive recurrent
+  networks.
+\newblock \emph{International Journal of Forecasting}, 36(3):1181--1191, 2020.
+
+\bibitem[Seeger et~al.(2016)]{seeger2016}
+M.~Seeger, D.~Salinas, and V.~Flunkert.
+\newblock Bayesian intermittent demand forecasting for large inventories.
+\newblock In \emph{NeurIPS}, 2016.
+
+\bibitem[Snyder et~al.(2012)]{snyder2012}
+R.~D. Snyder, J.~K. Ord, and A.~Beaumont.
+\newblock Forecasting the intermittent demand for slow-moving
+  inventories: A modelling approach.
+\newblock \emph{International Journal of Forecasting}, 28(2):485--496,
+  2012.
+
+\bibitem[Svetunkov and Boylan(2023)]{svetunkov2023iets}
+I.~Svetunkov and J.~E. Boylan.
+\newblock iETS: State space model for intermittent demand forecasting.
+\newblock \emph{Int.\ J.\ Production Economics}, 265, 2023.
+
+\bibitem[Syntetos and Boylan(2005)]{syntetos2005accuracy}
+A.~A. Syntetos and J.~E. Boylan.
+\newblock The accuracy of intermittent demand estimates.
+\newblock \emph{International Journal of Forecasting}, 21(2):303--314, 2005.
+
+\bibitem[Syntetos et~al.(2005)]{syntetos2005categorization}
+A.~A. Syntetos, J.~E. Boylan, and J.~D. Croston.
+\newblock On the categorization of demand patterns.
+\newblock \emph{JORS}, 56(5):495--503, 2005.
+
+\bibitem[Teunter et~al.(2011)]{teunter2011}
+R.~H. Teunter, A.~A. Syntetos, and M.~Z. Babai.
+\newblock Intermittent demand: Linking forecasting to inventory
+  obsolescence.
+\newblock \emph{EJOR}, 214(3):606--615, 2011.
+
+\bibitem[West and Harrison(1997)]{westharrison1997}
+M.~West and J.~Harrison.
+\newblock \emph{Bayesian Forecasting and Dynamic Models}.
+\newblock Springer, 2nd edition, 1997.
+
+\bibitem[T\"urkmen et~al.(2019)]{turkmen2019}
+A.~C. T\"urkmen, Y.~Wang, and T.~Januschowski.
+\newblock Intermittent demand forecasting with deep renewal processes.
+\newblock \emph{arXiv:1911.10416}, 2019.
+
+\end{thebibliography}
+
+% =========================================================================
+\appendix
+\onecolumn
+
+\section{Notation}\label{app:notation}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+$y_{i,t}$, $p_{i,t}$, $\ell_{i,t}$ & demand, occurrence indicator, log-size\\
+$T_i$ & initialization-window length of item $i$\\
+$g(i)$, $K$ & pooling group of item $i$; number of mixture components\\
+$\alpha_g,\beta_g$ & Beta occurrence prior; $\phi_g=\alpha_g+\beta_g$ its strength\\
+$\mu_{0,g},\tau^2_g,\sigma^2_g$ & size prior location, between/within-item variances\\
+$w$; $b$ & recency discount; forgetting strength $b=1-w$\\
+$n_i(w), s_i(w)$ & discounted observation / occurrence pseudo-counts\\
+$\bar p_i(w)$ & discounted empirical occurrence rate $s_i(w)/n_i(w)$\\
+$\lambda_i(w)$ & credibility weight $n_i(w)/(n_i(w)+\phi_g)$\\
+$\hat\pi_i,\hat\mu_i,\hat\sigma^2_i$ & posterior means of occurrence, log-size, variance\\
+$\alpha_p$ & classical TSB occurrence smoothing constant ($=1-w$)\\
+$\delta$ & occurrence drift rate (Proposition~\ref{prop:drift})\\
+$M$, $n$ & candidate count and validation size (Prop.~\ref{prop:oracle})\\
+$B$ & bootstrap draws for hyperparameter averaging\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Proofs}\label{app:proofs}
+
+\subsection{Proof of Proposition~\ref{prop:tsb-limit}}
+(i) Immediate from \eqref{eq:disc-post} since $s(w),n(w)$ are finite.
+(ii) Induction: $\hat p_1=(1-w)p_1+w\hat p_0$; if the closed form holds at
+$T-1$, then
+$\hat p_T=(1-w)p_T+w\hat p_{T-1}=(1-w)\sum_{t=1}^{T}w^{T-t}p_t+w^{T}\hat p_0$.
+With $n(w)=(1-w^{T})/(1-w)$,
+\[
+\bar p(w)=\frac{(1-w)\sum_t w^{T-t}p_t}{1-w^{T}}
+=\frac{\hat p_T-w^{T}\hat p_0}{1-w^{T}}.
+\]
+(iii) Rearranging, $\bar p(w)-\hat p_T=w^{T}(\bar p(w)-\hat p_0)$, and
+$|\bar p(w)-\hat p_0|\le1$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:active}}
+$n(w)=(1-w^{T})/(1-w)\le1/(1-w)$ and $x\mapsto x/(x+\phi)$ is increasing,
+so $\lambda(w)\le[1/(1-w)]/[1/(1-w)+\phi]=1/(1+(1-w)\phi)$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:drift} and
+Corollary~\ref{cor:rate}}
+With $k=T-t$ and $\sum_{k\ge0}kw^k=w/(1-w)^2$,
+\[
+\bigl|\E\bar p(w)-\pi_T\bigr|
+=\Bigl|\frac{\sum_t w^{T-t}(\pi_t-\pi_T)}{n(w)}\Bigr|
+\le\frac{\delta\,w/(1-w)^2}{(1-w^{T})/(1-w)}
+=\delta\,\frac{w}{(1-w)(1-w^{T})}.
+\]
+By independence and $\pi_t(1-\pi_t)\le\tfrac14$,
+\[
+\Var\,\bar p(w)\le\frac{\tfrac14\,(1-w^{2T})/(1-w^{2})}
+{[(1-w^{T})/(1-w)]^{2}}
+=\frac14\cdot\frac{(1-w)(1+w^{T})}{(1+w)(1-w^{T})}.
+\]
+Decomposing
+$\hat\pi-\pi_T=\lambda(\bar p-\E\bar p)+\lambda(\E\bar p-\pi_T)+(1-\lambda)(\mu_\pi-\pi_T)$,
+the first term is zero-mean and independent of the deterministic
+remainder, giving
+$\E(\hat\pi-\pi_T)^2\le[\lambda\mathrm{B}(w)+(1-\lambda)|\mu_\pi-\pi_T|]^2
++\lambda^2\Var\bar p(w)$ with $\mathrm{B}(w)$ the bias bound. For the
+corollary set $b=1-w$ and let $T\to\infty$ (so $w^{T}\to0$): the squared
+bias bound behaves as $\delta^2(1-b)^2/b^2\sim\delta^2/b^2$ and the
+variance bound becomes $\tfrac14\, b/(2-b)$, which is $b/8$ to leading
+order as $b\to0$. Minimizing $f(b)=\delta^2/b^2+b/8$ gives
+$f'(b)=-2\delta^2/b^3+1/8=0$, i.e.,
+$b^{*}=(16\delta^{2})^{1/3}=2^{4/3}\delta^{2/3}$, and
+$f(b^{*})=O(\delta^{2/3})$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:oracle}}
+For each candidate $c$, Hoeffding's inequality for independent scores in
+$[0,B]$ gives
+$\Pr\bigl(|\hat R(c)-R(c)|>t\bigr)\le2\exp(-2nt^2/B^2)$. A union bound
+over the $M$ candidates makes
+$\sup_c|\hat R(c)-R(c)|\le t$ hold with probability at least
+$1-2M\exp(-2nt^2/B^2)$; setting the right side to $\eta$ yields
+$t=B\sqrt{\log(2M/\eta)/(2n)}$. On this event,
+$R(\hat c)\le\hat R(\hat c)+t\le\hat R(c^{*})+t\le R(c^{*})+2t$ with
+$c^{*}=\arg\min_c R(c)$, which is the claim with constant
+$2t=B\sqrt{2\log(2M/\eta)/n}$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:credibility}}
+With known $(\alpha_g,\beta_g)$ and $s_i\mid\pi_i\sim
+\mathrm{Bin}(n_i,\pi_i)$, $\pi_i\sim\mathrm{Beta}(\alpha_g,\beta_g)$,
+the posterior mean $\hat\pi_i=\lambda_i\bar p_i+(1-\lambda_i)\mu_\pi$
+with $\lambda_i=n_i/(n_i+\phi_g)$ minimizes Bayes risk under squared
+loss among all estimators (tower property). Restricting to linear
+combinations $a\bar p_i+b$, the Bayes risk is
+$a^2\,\E[\Var(\bar p_i\mid\pi_i)] + (1-a)^2\Var(\pi_i)$ at the optimal
+intercept, minimized at
+$a^{*}=\Var(\pi_i)/\bigl(\Var(\pi_i)+\E[\Var(\bar p_i\mid\pi_i)]\bigr)
+=\lambda_i$, the B\"uhlmann credibility weight; the minimum is strictly
+below the risk of $a=1$ (the empirical rate) whenever
+$\Var(\pi_i)<\infty$ and $\phi_g>0$. \qed
+
+\section{Implementation details}\label{app:implementation}
+
+\paragraph{EB fitting.} Group Beta--Binomial hyperparameters maximize the
+(weighted) marginal likelihood by L-BFGS-B with positivity bounds; the
+size block uses pooled within-item variance for $\sigma^2_g$ and an
+intercept-only restricted marginal likelihood in $\tau^2_g$ with profiled
+$\mu_{0,g}$; item-level process variances use the conjugate
+scaled-inv-$\chi^2$ update with $\nu{=}20$. With discounting, every count
+is replaced by its weighted analogue \eqref{eq:discounted-stats}; the
+Beta--Binomial marginal extends to real pseudo-counts via log-Gamma
+functions. The predictive law is zero-inflated log-normal with predictive
+variance $\hat\sigma^2_{\mathrm{proc}}+\hat v_\mu$; the released
+configuration averages quantiles over $B{=}20$ bootstrap resamples of the
+item-statistics rows. An optional location-scale calibration layer exists
+but is \emph{off} in all headline results; enabling it changes mean
+pinball by less than $0.2\%$ (1.9192 vs.\ 1.9158) and only shifts the
+coverage--sharpness operating point.
+
+\paragraph{Mixture EM.} Deterministic quantile initialization over
+(occurrence rate, mean log-size); degenerate components (mass $<2$)
+frozen to global fallback priors; tolerance $10^{-5}$, max 60 iterations;
+$K\in\{1,\dots,6\}$ by BIC with $5K+(K-1)$ parameters.
+
+\paragraph{Selection.} Internal chronological split (first 80\% / last
+20\%, min head 8); score = mean pinball over $q\in\{0.5,0.75,0.9\}$,
+per-series scaled by head mean absolute demand; grid over
+$w\in\{1,0.999,0.997,0.995,0.99,0.98,0.95,0.90\}$ and partitions
+\{global, taxonomy, mixture(BIC)\}. Selected configurations per dataset
+are reported beneath Table~\ref{tab:point}; diagnostics
+(\texttt{remix\_selection\_diagnostics.csv}) accompany every run.
+
+\paragraph{Environment and timing methodology.} All experiments ran on a
+single workstation: Intel Core Ultra~9 275HX (24 cores; forecaster code
+single-threaded, StatsForecast baselines multi-process), 32\,GB RAM,
+Windows~11, Python~3.13 with NumPy~1.26/2.x-compatible code paths,
+pandas~2.x, SciPy~1.15. Reported per-series times are wall-clock
+fit-plus-predict averaged over the panel. The $0.3$\,ms/series base
+figure is the point pipeline \emph{without} bootstrap averaging; the
+probabilistic pipeline with $B{=}20$ bootstrap refits costs
+approximately $20\times$ the group-fitting stage (still under
+$10$\,ms/series on Online Retail). Selection adds the constant factor of
+$24$ candidate fits. GPU is not used anywhere in the \REMIX{} pipeline.
+
+\paragraph{Baselines.} StatsForecast defaults; TSB
+$(\alpha_d,\alpha_p)=(0.5,0.45)$; AutoARIMA/AutoTheta season 7 (daily) /
+12 (monthly) for intervals. Conformal wrappers: per-series chronological
+calibration (ratio 0.2), signed-residual quantiles, zero-truncated and
+monotonized. Tweedie: per-series autoregressive GLM, log link, $p{=}1.5$,
+14 lags (daily) / 6 (monthly), $\ell_2{=}0.1$. iETS:
+\texttt{smooth::adam}, automatic occurrence model.
+
+\section{Additional results}\label{app:extra}
+
+\subsection{Full per-dataset tables}
+Complete tables with RMSE, WRMSSE, all quantiles, coverage and interval
+widths, the fixed-corner ablation on every dataset, and per-model
+runtimes are provided in the released repository
+(\texttt{outputs/aistats2027/}, one directory per table, plus
+\texttt{MANIFEST.md} mapping each table to its source file).
+
+\subsection{Significance tests}
+Focal = forgetting configuration (taxonomy pooling, $w$ auto) on Online
+Retail; per-series losses over 3{,}649 series; Holm adjustment.
+MAE: vs.\ stationary model mean diff $-0.234$ ($p_t<10^{-24}$,
+$p_W<10^{-7}$); vs.\ TSB $-0.110$ ($p_t=0.079$, $p_W<10^{-166}$);
+vs.\ ADIDA $-0.105$ ($p_t<10^{-4}$); vs.\ AutoARIMA $-0.959$
+($p_t<10^{-15}$); vs.\ AutoTheta $-2.713$ ($p_t<10^{-83}$).
+RMSE: better than every baseline, all $p<0.005$.
+
+\subsection{Ablation grid on the monthly panels}
+Repeating the pooling $\times$ forgetting grid of
+Table~\ref{tab:ablation} on the monthly suite (each cell an independent
+run with its own selected $w$):
+
+\begin{table}[h]
+\centering
+\caption{MAE (RMSSE) for the six-configuration grid on the monthly
+panels. Forgetting improves MAE at every pooling structure on every
+panel; the pooling structure is second-order except on RAF, where the
+global pool with forgetting is strongest.}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llccc}
+\toprule
+Pooling & Forget & Auto & Carparts & RAF\\
+\midrule
+global & off & 3.230 (1.138) & 0.637 (1.048) & 2.179 (1.624)\\
+taxonomy & off & 3.254 (1.139) & 0.639 (1.048) & 2.234 (1.624)\\
+learned & off & 3.341 (1.146) & 0.644 (1.048) & 2.488 (1.626)\\
+global & auto & 3.215 (1.137) & 0.573 (1.012) & \textbf{2.113} (1.624)\\
+taxonomy & auto & \textbf{3.211} (1.138) & 0.574 (1.012) & 2.161 (1.624)\\
+learned & auto & 3.329 (1.147) & \textbf{0.557} (1.013) & 2.387 (1.625)\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Full-scale M5}
+Running all 30{,}490 bottom-level M5 series (fast classical baselines;
+AutoARIMA/AutoTheta and the neural models remain on the 5{,}000 sample
+for cost) yields the same conclusion as the sample, strengthened:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Model & MAE & RMSE & RMSSE\\
+\midrule
+CrostonClassic & 1.1903 & 2.8392 & 2.9781\\
+CrostonSBA & \secondbest{1.1672} & \secondbest{2.7806} & 2.9765\\
+TSB & 1.2176 & 2.9864 & 2.9955\\
+ADIDA & 1.1740 & 2.8893 & 2.9641\\
+IMAPA & 1.1780 & 2.8959 & \secondbest{2.9551}\\
+\REMIX{} & \best{1.1400} & \best{2.7072} & \best{2.9143}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The selector chooses (mixture, $w{=}0.90$) at full scale,
+identical to the sample; end-to-end wall-clock for \REMIX{} on 30{,}490
+series (59M observations) is minutes, dominated by data loading.
+
+\subsection{MASE}
+For completeness we report MASE (per-series MAE scaled by in-sample
+naive MAE), the intermittent-demand literature's traditional point
+metric. It inherits the absolute-error pathology quantified in
+Section~\ref{sec:main-results}: the all-zero forecast attains the best
+MASE on Online Retail ($1.84$ vs.\ TSB $2.08$, \REMIX{} $2.41$),
+Carparts, and RAF, and zero-leaning methods (TSB, IMAPA) lead among real
+forecasters; on Auto, \REMIX{} ($0.889$) is second only to CrostonSBA
+($0.883$). Full table in the repository
+(\texttt{mase\_table.csv}); we treat MASE as descriptive, not
+decision-relevant, for the same reason as MAE.
+
+\subsection{Cold-start and regime slices}
+On Online Retail, the forgetting configuration improves the stationary
+model's MAE in every ADI/CV$^2$ regime (Intermittent 1.282 vs.\ 1.367,
+also beating TSB 1.322 and ADIDA 1.310) and in four of five cold-start
+bins; learned pooling adds its largest gains in the sparsest bins.
+
+\subsection{Walk-forward details}
+Blocks of 7 days; every baseline refits per block; \REMIX{} uses online
+sufficient-statistics updates (occurrence discounting applied per block).
+Point: ADIDA 5.320/4.637 (MAE/RMSSE), IMAPA 5.332/4.632, stationary
+hierarchical 5.586/4.725, forgetting 5.411/4.682. Probabilistic
+(pinball at $q\in\{0.1,\dots,0.9\}$): 0.482/1.187/2.265/2.875/2.461,
+best q90 and best mean against all conformal wrappers.
+
+\subsection{Neural baselines}
+\label{app:neural}
+
+Table~\ref{tab:neural} collects the neural comparisons. Deep Renewal
+Processes \citep{turkmen2019} are the architecturally closest neural
+model (the same occurrence--size decomposition); under the fixed
+protocol on a 500-series Online Retail subsample (the computational
+budget of the original comparison), the hierarchical EB law wins mean
+pinball by 12\% and the inventory-critical upper quantiles by 11--26\%,
+at four orders of magnitude less computation. DeepAR and an RNN under a
+strict prediction-only chaining protocol (no re-training, no teacher
+forcing, no revealed targets) reach lower MAE (RNN) but worse RMSE and
+RMSSE at both horizons. Two caveats apply: the neural inference times
+are not like-for-like with a constant-forecast model (autoregressive
+decoding vs.\ table lookup), and DRP could not be re-run at full scale
+in the current environment (its MXNet dependency is unmaintained); the
+subsample numbers are reported from that identical-protocol run and,
+because they cannot currently be re-verified, should be read as
+indicative rather than confirmatory (see also
+Section~\ref{sec:limitations}). The forgetting and pooling operators
+change none of the inference complexity of the base model, so the
+qualitative picture---equal or worse accuracy at $10^2$--$10^4\times$
+the cost---applies to every configuration in this paper.
+
+\begin{table}[t]
+\centering
+\caption{Neural comparisons on Online Retail. Top: probabilistic
+(unscaled pinball, 500-series subsample, fixed protocol). Bottom: point
+metrics under prediction-only chaining at two horizons.}
+\label{tab:neural}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcccccc}
+\toprule
+ & q10 & q25 & q50 & q75 & q90 & Time\\
+\midrule
+DeepRenewal & 0.358 & 0.895 & 1.790 & 2.684 & 2.941 & $\sim$20\,min\\
+Hierarchical EB & 0.387 & 0.914 & 1.772 & 2.390 & 2.186 & 1\,s\\
+\midrule
+ & \multicolumn{2}{c}{MAE} & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{RMSSE}\\
+ & $h{=}10$ & $h{=}100$ & $h{=}10$ & $h{=}100$ & $h{=}10$ & $h{=}100$\\
+\midrule
+RNN & 3.257 & 3.132 & 11.938 & 12.538 & 0.875 & 8.197\\
+DeepAR & 6.245 & 7.288 & 17.221 & 18.623 & 7.151 & 9.986\\
+Hierarchical EB & 4.639 & 4.495 & 11.284 & 11.733 & 0.855 & 8.170\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Datasets}
+Online Retail: UCI 352; returns/zero-price removed, 99.5\% quantity cap,
+daily aggregation densified with zeros. M5: Kaggle M5-Accuracy;
+seed-controlled 5{,}000-series sample. Auto/RAF: gluon-ts
+\texttt{intermittent-datasets} branch. Carparts: Zenodo 4656022, series
+without missing values and with at least one zero (2{,}509). Monthly
+panels use the last-$h$ holdout of \citet{damato2025}.
+
+\end{document}

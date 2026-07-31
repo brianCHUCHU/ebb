@@ -1,4 +1,10 @@
-# Paper Reproduction
+# Paper Reproduction (v1 submission)
+
+> **範圍說明（2026-07-29）**：本檔描述的是**前一版投稿** `Hummer_noHurdle.tex`
+> （Taxonomy-Conditioned Hierarchical Bayesian TSB）的重現路徑，保留以供對照。
+> **當前論文是 REMIX（`paper_v2/main.tex`）**，模型改為 pooling 結構與折扣的聯合選擇；
+> 專案狀態與待辦見 `paper_v2/STATUS.md`。下方的「canonical assumptions」是 v1 的假設，
+> 對應 `--hb-*` 旗標的預設值，不是 REMIX 的配置。
 
 This repository is aligned to `Hummer_noHurdle.tex`.
 
