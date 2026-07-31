@@ -3,7 +3,7 @@
 > 來源：2026-07-29 使用者提供的 code-agent 實作清單（A–N，約 50 項）。
 > 狀態碼：**DONE** 已完成並驗證｜**PARTIAL** 部分完成（註明缺口）｜**TODO** 未動｜
 > **BLOCKED** 需資源或作者決定。本檔是這份清單的唯一權威追蹤表；專案整體狀態見 `STATUS.md`。
-> 最後更新：2026-07-29。
+> 最後更新：2026-07-30（B3 結論撤回並更正）。
 
 ---
 
@@ -49,7 +49,7 @@ n=3649（OR）而非 ~8×10⁴ 個 observation-quantile 對；有界性明寫為
 
 ---
 
-## B. Synthetic experiment — 全部完成
+## B. Synthetic experiment — ⚠️ 本節結論**已於 2026-07-30 撤回**，見下方 B-REVISED
 
 | 項 | 內容 | 狀態 |
 |---|---|---|
@@ -67,9 +67,9 @@ learned-partition / learned+regularized）。輸出 `outputs/synthetic_resolutio
 - (a) **pooling 本身很值錢**：single pool 全格勝過 no-pooling，優勢隨異質性增加（0.010→8.13）。
 - (b) **mixture 找得到結構**：ARI 由 0.26（sep=0.25，選 K≈2）升到 **0.95–0.96（sep=2.0，選 K=4＝真值）**，
   且幾乎不受折扣影響 → **不是 recovery 失敗**。
-- (c) **連 oracle partition 都不划算**：對 single pool 的配對 MAE 差在 sep=2.0 為
-  **−2.01±0.11（w=1）到 −7.68±2.57（w=0.90）**，隨 separation 與 forgetting 惡化；
-  正則化移除塌陷但不逆轉方向 → **不是 plug-in 失敗，是 information shortage**。
+- (c) ~~連 oracle partition 都不划算 … 是 information shortage~~
+  **← 此項已撤回**：受 separation/難度混淆與只看 MAE 兩個缺陷影響，見 B-REVISED。
+  (a) 與 (b) 不受影響，仍成立。
 
 **過程中修掉的兩個實作缺陷**（首版跑出的結果無效，已作廢）：合成資料的群只在 size mean 上分離，
 BIC 因此選 K=1、learned 與 global 數值完全相同；local arm 讓每個 item 自成一群導致
