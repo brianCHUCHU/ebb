@@ -98,6 +98,31 @@
 
 ---
 
+## 3.5 進行中：Writing Quality Check（academic-paper skill，2026-07-30 中斷待續）
+
+已安裝 `imbad0202/academic-research-skills` 至 `~/.claude/skills/`（四 skill + shared）與
+`~/.claude/commands/`（16 個 `/ars-*` 指令）。**新 session 會自動載入，可直接用
+`/ars-revision`、`/ars-reviewer` 等。** 授權 CC-BY-NC 4.0。
+
+已用該 skill 的 `references/writing_quality_check.md` 對 `main_v3.tex` 完成全文掃描
+（掃描腳本思路：去除註解/表格/公式後對散文計數）。**掃描結果（待修）**：
+
+| 規則 | 現況 | 上限 | 狀態 |
+|---|---|---|---|
+| 清嗓開場（In order to 等） | 0 | — | ✅ 乾淨 |
+| AI 慣用詞 | crucial×1(L254)、nuanced×1(L1219)、robust×2(L74 等)；leverage×18 為**已定義技術詞，豁免** | — | 小修 |
+| **em-dash（---）** | **83 行（~60 個結構）** | ≤3 | ❌ 主要工作 |
+| 分號 | ~136（11,114 words） | ~22 | ❌ 需大減 |
+| 二元對比句式（not X but Y / rather than） | 23 | ≤2（針對修辭 tic） | 需減半 |
+
+**修復方針（已規劃、未執行）**：em-dash 逐一改為逗號對／括號／冒號／分句
+（範圍語 en-dash `--` 如 0.75--0.90、Bühlmann--Straub 為正確用法，不動）；
+分號集中在我起草的敘事段落改句號；「not because...but because」全文留 1 處（結論），
+其餘改寫；crucial→刪、nuanced→two-sided、robust(L74)→reliable。
+修完重跑掃描 + `check_tex.py` + 兩個測試檔，再 commit。
+
+---
+
 ## 4. 檔案分工（更新）
 
 - **`main_v3.tex`** — 當前工作稿（本檔所述變更皆已套用；靜態檢查全清）。
