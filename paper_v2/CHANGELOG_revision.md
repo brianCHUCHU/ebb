@@ -149,6 +149,41 @@
   輸出：`scratch_cred_or_{global,taxonomy,mixture}`、`scratch_cred_or_mixture_split`、
   `scratch_prob_mix_{off,cred,credsplit}`。
 
+## Round 8（2026-07-29，Q-A 保留標題、Q-B 做 Prop 5，正文改寫）
+
+- **T9 / Prop 5**｜`main.tex` 新增 §3.x「How much structure is estimable?」｜
+  **Proposition 5（雙邊 credibility；塌陷事件）** + **Corollary 5.1（learned partition 的解析度上限）**：
+  (i) λ_i ≤ [1+(1−w)κ_g]⁻¹ < 1；(ii) E[S_g²]=τ_g²+s̄_g（不等 n_i 亦精確），
+  Pr[τ̂_g²=0] ≃ Φ(−√((m_g−1)/2)·ρ_g)，ρ_g=τ_g²/(τ_g²+s̄_g)，且 n_i≤(1−w)⁻¹ ⇒ s̄_g≥(1−w)σ_g²
+  ⇒ **折扣直接壓低可識別比 ρ_g**；(iii) 變異成分部分匯集後 λ_i ≥ n_i(1−ω_g)τ̂_0²/(…) > 0。
+  Cor 5.1：可估條件 ρ_g√(m_g−1) ≳ 1；分群越細（τ_g²↓、m_g↓）、遺忘越強（(1−w)σ_g²↑）越快越界；
+  越界後正則化估計退回**全域 pool 而非群平均**——這正是 partition 風險面平坦的理由，
+  也把 Prop 4 的 oracle 界與經驗觀察接起來。附錄 A 補完整證明。
+- **T9 驗證**｜`tests/test_theory_symbolic.py` 新增 5 個檢查（全過）：(i) 上界、
+  (ii) E[S²] 精確無偏（不等 n_i，符號驗證）、(iii) 下界與其對 ω 的單調性、
+  ρ_g 對 (1−w) 的單調性、以及 (ii) 的常態近似**對 Monte Carlo 模擬**（20,000 抽樣 × 3 組參數，
+  機率誤差 <0.05）。
+- **T8 / Q-A**｜標題保留 "Learning to Pool and to Forget"。摘要與貢獻三點依 STATUS §1 改寫：
+  貢獻 (2) 改為「選擇器的理論 + 可選擇範圍的上限」，貢獻 (3) 改為「分開量測兩軸並報告哪一個有效」，
+  明寫三次修復皆未使 learned partition 勝出、且這正是 Cor 5.1 所預測。
+- **T10 / Q-C**｜§4.3 新增「The flatness is a resolution limit, not an estimation defect」段落
+  （正文），機制與完整格子進附錄新節 `app:resolution`（2 表 + 4 段）。
+- **E1 cold-start scaling law**（用既有 slice 資料，無需新跑）｜learned vs global 的 MAE 差
+  依正觀測數分箱：OR **+24.5/+19.5/+17.8/+7.1/−4.2%** 單調遞減；Carparts
+  −33.2/+7.6/+9.3/+4.2/+1.1%；RAF 全負但幅度遞減 −13.4/−16.7/−13.3/−9.3%。
+  **符號取決於群先驗是否優於全域先驗，幅度隨自身樣本數衰減——四個面板皆然**，即 Cor 5.1 的預測。
+- **E2 五面板修復格子**（`scratch_e2_{auto,carparts,raf}_{base,reg}`）｜learned + split + credibility：
+  RAF MAE 2.3874 → **2.2181（−7.1%，塌陷最嚴重的面板修復最多）**；Auto 3.3293 → 3.3317（RMSSE
+  1.14726 → 1.14202）；Carparts 0.5571 → 0.5818（**+4.4% 變差**，該面板是唯一 learned 原本領先者）；
+  OR 5.6925 → 5.6275。**沒有任何面板因此超越 single pool。**誠實寫入 `tab:repairs`。
+- **識別性統計量表**｜`tab:identifiability`：以**未截斷**的 S_g²−s̄_g 計算 z_g（避免用截斷值
+  自證），OR 五個 component 在 w=1.00/0.98/0.95/0.90 下的 z_g，塌陷數 1/5 → 3/5 → 3/5 → 4/5。
+- **Limitations**｜新增 (1b)（Cor 5.1 的高斯／χ² 近似邊界、它不說明門檻以下哪個 partition 最好、
+  以及「換一個分群目標函數是否能繞過上限」是下一個實驗）；(3) 補上 soft-responsibility
+  **是唯一不受 Cor 5.1 同樣約束的擴充**（它改變 predictive 的形狀而非只換收縮目標）。
+- 靜態檢查通過（env/refs/bibitems/brace/dollar 全清）；兩個測試檔在改動後皆通過。
+- **未解**：正文再增約 1.5 頁，AISTATS 8 頁上限的壓力升高，搬遷計畫見 `SUBMISSION_CHECKLIST.md`。
+
 ## Round 2（其餘進行中）
 
 - **A3**｜判定：Table1 vs 舊 ablation 差異 = 配置不同（w 與 label-learning stats），非 fit window。

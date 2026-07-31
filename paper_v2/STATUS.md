@@ -129,14 +129,14 @@ Q5 GP-Tweedie 引用+附錄、Q6 TSB-tuned 暫緩、Q4 選 (c) 且 (a) 已判定
 - [x] **T6c** `PAPER_REPRODUCTION.md` 加範圍橫幅（它描述的是 v1 投稿，非當前論文）
 - [x] **T6d** 回歸驗證：`tests/test_theory_symbolic.py` 與 `tests/test_determinism.py`
       在 Round 6/7 的程式變動後**皆通過**
-- [ ] **T7** git commit（等你許可；見 Q-G。目前整個 v2 工作零 commit）
+- [x] **T7** git commit 完成（ecef8c4 程式／af8685f 測試／5fa694d 論文與文件；後續 Round 8 另行提交）
 
 ### P1 — 論文內容（需先解 Q-A / Q-B / Q-C）
-- [ ] **T8** 依 §1 改寫摘要 + 貢獻三點（等 Q-A 定案）
-- [ ] **T9** Prop 5：雙邊 credibility 界（等 Q-B）— 最高 ROI 的理論補強
-- [ ] **T10** Round 7 寫入 §4.3 + 附錄（等 Q-C 決定位置）
-- [ ] **T11** E1 cold-start scaling law（實驗 + 圖 + 與 λ 公式的對照）
-- [ ] **T12** E2 五面板 split/credibility ablation
+- [x] **T8** 摘要 + 貢獻三點改寫完成（Q-A 裁決：**保留標題**）
+- [x] **T9** Prop 5（雙邊 credibility）+ Cor 5.1（解析度上限）+ 附錄證明，5 項符號/模擬驗證通過（Q-B 裁決：**做**）
+- [x] **T10** §4.3 加「flatness is a resolution limit」段 + 附錄新節 `app:resolution`（2 表 4 段）
+- [x] **T11** E1 cold-start scaling law（由既有 slice 資料算出，四面板皆呈幅度隨樣本數衰減）— 尚未畫圖，目前以數字入文
+- [x] **T12** E2 四面板修復格子（`tab:repairs`）：RAF −7.1%、Carparts +4.4% 變差，無面板超越 single pool
 
 ### P2 — 上升空間
 - [ ] **T13** E3 soft-responsibility predictive（剩餘路線中上升空間最大）
