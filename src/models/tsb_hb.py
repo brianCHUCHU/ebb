@@ -716,6 +716,7 @@ def fit_tsb_hb(
     fit_discount: float = 1.0,
     hyper_train_df: Optional[pd.DataFrame] = None,
     hyper_shrink: str = "off",
+    fixed_group_hypers: Optional[dict[str, pd.Series]] = None,
 ) -> TSBHBParams:
     """Fit TSB-HB with optional group-aware priors and hyperparameter bootstrap.
 
@@ -750,6 +751,17 @@ def fit_tsb_hb(
         group_shrink_strength=group_shrink_strength,
         hyper_shrink=hyper_shrink,
     )
+
+    if fixed_group_hypers is not None:
+        # Oracle path: use supplied hyperparameters instead of estimating them.
+        # Only meaningful on simulated data where the truth is known; it isolates
+        # "the partition carries no information" from "the partition's
+        # hyperparameters are hard to estimate".
+        alpha_by_group = fixed_group_hypers["alpha"].reindex(alpha_by_group.index).fillna(alpha_by_group)
+        beta_by_group = fixed_group_hypers["beta"].reindex(beta_by_group.index).fillna(beta_by_group)
+        size_mu_by_group = fixed_group_hypers["size_mu"].reindex(size_mu_by_group.index).fillna(size_mu_by_group)
+        size_sigma_by_group = fixed_group_hypers["size_sigma"].reindex(size_sigma_by_group.index).fillna(size_sigma_by_group)
+        size_tau_by_group = fixed_group_hypers["size_tau"].reindex(size_tau_by_group.index).fillna(size_tau_by_group)
 
     p_post, shrunk_mean_log, posterior_var_mu, sigma_sq_process = _compute_posteriors_from_stats(
         stats=stats,

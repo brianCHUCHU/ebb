@@ -878,76 +878,103 @@ weakest.
 
 The panel results say that partition-level differences are small; they
 cannot say \emph{why}, because on real data the true partition is
-unknown. We therefore simulate hierarchical hurdle panels in which it is
-known: $K{=}4$ groups separated on both blocks the mixture models (mean
-log size and occurrence rate), item means drawn around each group mean
-with variance $\tau^2{=}0.15$, log-normal sizes, and a linear occurrence
-drift so that forgetting has something to track. We vary the group
-separation, the number of items per group, and the discount, with five
-replicates per cell, and compare five estimators: no pooling (per-item
-empirical hurdle), a single pool, the \emph{oracle} partition (true
-labels), the learned partition, and the learned partition with the
-variance components regularized. Reporting paired differences within
-replicate removes the simulation noise that would otherwise swamp the
-comparison.
+unknown. We simulate hierarchical hurdle panels where it is known, with
+the generator matched to the fitted model: $K$ groups whose centers are
+symmetric about a fixed grand mean in log-size and, in logit, about a
+fixed occurrence rate, so that moving the centers apart does not also
+change the panel's scale or difficulty. Four estimators form a ladder
+that separates the possible explanations---a single pool with estimated
+hyperparameters; the \emph{true} labels with estimated group
+hyperparameters; the true labels with the \emph{true} group
+hyperparameters; and the true conditional predictive distribution, which
+is the irreducible floor. The last two matter: an arm that receives the
+true labels but must still estimate the group hyperparameters cannot
+distinguish ``the partition carries no information'' from ``the
+partition's hyperparameters are hard to estimate''.
 
-Three findings, all with $n{=}10$ paired replicates per cell.
+\paragraph{What governs the value of a partition.} The controlling
+quantity is not how far apart the groups are but how much data each item
+already has, exactly as the credibility weight
+$\lambda_i=n_i/(n_i+\kappa_g)$ says. We hold the structure fixed at a
+deliberately easy configuration---$K{=}2$, $500$ items per group,
+occurrence rates $0.05$ against $0.80$, size centers three log-units
+apart, no discounting---and sweep only the series length.
 
-\textbf{(a) Pooling is worth a great deal.} A single pool beats no
-pooling in every cell, and by more as the panel becomes more
-heterogeneous: mean MAE advantage $0.010$--$0.042$ at separation $0.25$
-rising to $2.06$--$8.13$ at separation $2.0$. This is
-Proposition~\ref{prop:credibility} operating as expected, and it is the
-part of ``pooling'' our negative result does \emph{not} touch.
+\begin{table}[t]
+\centering
+\caption{Controlled sweep with the generator matched to the model:
+$K{=}2$ well-separated groups, only the series length varying. The
+oracle partition's advantage over a single pool is governed by the
+item's own sample size, not by how separable the groups are. With the
+true hyperparameters supplied as well, the numbers barely move---so
+estimating them is not the binding constraint here.}
+\label{tab:sanity}
+\begin{tabular}{rrrrrr}
+\toprule
+& median & \multicolumn{3}{c}{MAE} & oracle\\
+\cmidrule(lr){3-5}
+$T$ & $n_i^{+}$ & single pool & oracle labels & \;+true hypers & gain\\
+\midrule
+400 & 154.5 & 5.2006 & 5.1987 & 5.1999 & $0.04\%$\\
+60 & 23.5 & 5.1682 & 5.1525 & 5.1567 & $0.30\%$\\
+25 & 10.0 & 5.3103 & 5.2302 & 5.2355 & $1.51\%$\\
+12 & 4.5 & 5.5383 & 5.3488 & 5.3439 & $3.42\%$\\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\textbf{(b) The mixture recovers structure when structure is there.}
-Adjusted Rand index against the true labels rises from $0.26$--$0.31$
-(selected $K\approx2$) at separation $0.25$ to $0.95$--$0.96$ (selected
-$K=4$, the truth) at separation $2.0$, and is essentially unaffected by
-the discount. So a failure to pay off is not a failure to find the
-partition.
+Table~\ref{tab:sanity} is the result. At $T{=}400$, where the median item
+has $154$ positive observations, the true partition is worth $0.04\%$:
+$\lambda_i$ is essentially one for every item and \emph{no} prior,
+correct or not, can matter. As the window shrinks the advantage rises
+monotonically to $3.42\%$ at $T{=}12$. Mean pinball behaves the same way
+($0.01\%$ to $1.53\%$). Supplying the true group hyperparameters instead
+of estimating them changes almost nothing, and the true predictive
+distribution is best everywhere, as it must be---together these bound
+how much of the remaining gap is estimation error rather than model
+misspecification.
 
-\textbf{(c) Even the oracle partition does not pay.} Against the single
-pool, the \emph{true} partition loses in almost every cell, and loses
-more as separation grows and as forgetting strengthens: at separation
-$2.0$ the mean paired MAE difference is $-2.01\pm0.11$ at $w{=}1$ and
-$-7.68\pm2.57$ at $w{=}0.90$. The mechanism is the one
-Proposition~\ref{prop:twosided} describes. A single pool over
-heterogeneous items has a large $\tau^2$, hence $\kappa=\sigma^2/\tau^2$
-small and $\lambda_i$ near one: items keep their own histories and the
-prior mostly supplies a floor. Splitting into groups makes each group
-internally homogeneous, which is precisely what drives $\tau_g^2$ down,
-$\kappa_g$ up and $\lambda_i$ toward zero---items are replaced by their
-group mean. When items have ample data of their own, that trade is a
-loss, and forgetting makes it worse by shrinking the effective count on
-the numerator of $\lambda_i$. Regularizing the variance components
-removes the boundary collapse but does not reverse the trade
-($-0.06$ to $-3.51$ mean paired difference, in the same direction).
+This reframes the empirical finding of Section~\ref{sec:ablation}
+without softening it. The learned partition does not move the aggregate
+metrics on our five panels not because the structure is absent or
+unrecoverable, but because the median item on those panels already
+carries enough of its own history for the prior to be a minor term:
+under a single pool, median $\lambda_i$ runs $0.75$--$0.90$. The
+partition's leverage is $\kappa_g/(n_i+\kappa_g)$, and on these panels
+that factor is small for most items and large only in the sparsest
+cold-start bins---which is exactly where the measured differences appear
+(Appendix~\ref{app:resolution}). Corollary~\ref{cor:resolution} adds the
+second mechanism: strengthening the discount both raises the leverage
+(by shrinking $n_i$) and degrades the estimate of $\tau_g^2$ that sets
+$\kappa_g$. The two effects act in opposite directions, which is why the
+net effect of the pooling axis is small rather than reliably signed.
 
-Read against the three explanations of Section~\ref{sec:ablation}, this
-is a clean verdict: not a recovery failure (b), not a plug-in failure
-(the regularized arm behaves like the unregularized one), but a genuine
-absence of usable information at these effective sample sizes---which is
-what Corollary~\ref{cor:resolution} predicts and what the real panels
-show. Figure~\ref{fig:resolution} summarizes the grid, and its middle
-panel is the direct check of the collapse-probability approximation:
-over $480$ configurations the median absolute error between the
-simulated and predicted $\Pr[\hat\tau_g^2=0]$ is $0.0006$ and the
-$90$th percentile is $0.040$. The approximation is accurate except for
-small groups that combine strongly unequal counts with strongly unequal
-sampling variances, where it \emph{understates} the collapse probability
-by up to $0.21$ ($m_g{=}10$, $\tau^2/\sigma^2{=}0.05$, $w{=}0.90$);
-in that regime the condition should be read as optimistic.
+\paragraph{A correction.} An earlier version of this experiment reported
+that the oracle partition \emph{loses} to a single pool by a margin that
+grows with group separation, and read that as an absence of usable
+information. That reading was an artifact of two defects, both of which
+we corrected and report here for completeness. The generator placed group
+centers at $0,s,2s,3s$, so raising the separation also raised the panel's
+demand scale---mean MAE ran from $0.7$ to $67$ across the grid and cells
+were not comparable. And the comparison was made on MAE alone, which on
+intermittent data rewards zero-leaning forecasts; on mean pinball over
+the same runs the oracle partition in fact \emph{wins} whenever
+forgetting is active ($+2.1\%$ to $+3.2\%$ at $w{=}0.90$, ten of ten
+paired replicates), and loses only in the undiscounted cells. The
+corrected design above holds difficulty fixed and reports both.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figs/fig_resolution.pdf}
-\caption{Controlled resolution experiment. \textbf{(A)} MAE advantage of
-the learned partition over a single pool as forgetting strengthens; it
-is negative throughout and falls with $1-w$. \textbf{(B)} Simulated
-collapse probability against the resolution statistic
-$z=\rho_g\sqrt{(m_g-1)/2}$, with the predicted $\Phi(-z)$ overlaid.
-\textbf{(C)} Learned-versus-global advantage over the
+\caption{Controlled resolution experiment. \textbf{(A)} MAE difference
+between the learned partition and a single pool as forgetting
+strengthens. \textbf{(B)} Simulated collapse probability against the
+resolution statistic $z=\rho_g\sqrt{(m_g-1)/2}$, with the predicted
+$\Phi(-z)$ overlaid; over $480$ configurations the median absolute error
+is $0.0006$ and the $90$th percentile $0.040$, degrading to $0.21$ for
+small groups that combine strongly unequal counts with heteroskedastic
+sampling variances, where the approximation \emph{understates} collapse.
+\textbf{(C)} Learned-versus-global difference over the
 (separation, discount) grid.}
 \label{fig:resolution}
 \end{figure}

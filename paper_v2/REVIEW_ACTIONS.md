@@ -78,6 +78,50 @@ BIC 因此選 K=1、learned 與 global 數值完全相同；local arm 讓每個 
 
 ---
 
+## B-REVISED（2026-07-30）：B3 結論**已撤回並更正**
+
+外部審閱對 B3 提出六個可能的 artifact。逐項查證後，**其中兩個成立，B3 原結論作廢**。
+
+**成立的缺陷**
+- **#5 separation 與難度混淆**：生成器把群心放在 0, s, 2s, 3s，separation 一大，
+  panel 的 grand mean 與需求尺度同步變大——`global-discounted` 的平均 MAE 由
+  **0.726 → 1.236 → 4.236 → 67.279**。格點根本不可比，「差距隨 separation 擴大」大半是尺度假象。
+- **#4 只看 MAE**：同一批 run 改看 pinball，結論反轉。oracle partition 在
+  **w=0.90 勝 2.06–3.22%、10/10 配對重複全勝**；w=0.99/1.00 才略輸（−0.1% 至 −1.2%）。
+- **#2 oracle 不完整**：舊 arm 只給真實標籤仍重估群超參數。已新增
+  `fit_tsb_hb(fixed_group_hypers=...)` 與完整階梯（global / labels+estimated /
+  labels+true / true predictive）。
+
+**不成立的**：#1 符號方向正確（已逐格核對原始 MAE）；#6 各 arm 的 train/test 與 refit protocol 相同。
+
+**新的、已驗證的結論（sanity check 4，`outputs/synthetic_sanity/extreme.csv`）**
+舊的「極端可辨識案例」其實**資料太充足**：T=400 時每個 item 有 154 個正觀測，λ_i≈1，
+任何先驗都不起作用——那是檢查本身失敗，不是模型。改為**固定結構、只掃序列長度**後：
+
+| T | median n⁺ | single pool MAE | oracle labels | +true hypers | oracle 增益 |
+|---|---|---|---|---|---|
+| 400 | 154.5 | 5.2006 | 5.1987 | 5.1999 | 0.04% |
+| 60 | 23.5 | 5.1682 | 5.1525 | 5.1567 | 0.30% |
+| 25 | 10.0 | 5.3103 | 5.2302 | 5.2355 | **1.51%** |
+| 12 | 4.5 | 5.5383 | 5.3488 | 5.3439 | **3.42%** |
+
+pinball 同向（0.01% → 1.53%）。**oracle partition 確實會贏，而且贏多少由每個 item 自己的
+樣本數決定，不是由群間距離決定**——正是 credibility 權重 λ_i=n_i/(n_i+κ_g) 所說的。
+給真實超參數幾乎不改變結果 → **超參數估計不是瓶頸**。true-predictive 全場最佳（正確性檢查通過）。
+
+**因此正文改為**：learned partition 在五個面板上不動總體指標，**不是**因為結構不存在或找不到，
+而是這些面板的中位 item 自身歷史已足夠（single pool 下 median λ_i 0.75–0.90），先驗只是次要項。
+「information shortage」的措辭已從論文移除。
+
+**仍存在的已知缺陷（未修，數字未使用）**：`run_synthetic_sanity.py` 的
+`true_predictive()` 用 item 的初始 occurrence p_i，未跟隨生成器的 drift，
+因此**啟用 drift 的 grid（checks 1–3）無效**——證據是該 grid 中 true-predictive 在
+MAE/pinball/Brier 上最差、卻在 log_size_mse 上最好（1.6304，確實最低），正是 occurrence
+oracle 錯、size oracle 對的指紋。`extreme` 案例 drift=0，不受影響。
+**修法**：true_predictive 需取測試期各時點的 p_t。修好前 grid 數字不得入文。
+
+---
+
 ## C. learned pooling 的實證補強
 
 | 項 | 內容 | 狀態 |
