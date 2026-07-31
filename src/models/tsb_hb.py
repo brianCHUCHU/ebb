@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -11,6 +11,12 @@ from scipy.stats import norm
 
 
 GLOBAL_GROUP = "__global__"
+
+# Column carrying each observation's lag behind the forecast origin of the full
+# initialization window. Present only on frames produced by
+# :func:`split_for_hyper_estimation`, so that a sub-sample keeps the recency
+# weights it would have received inside the undivided window.
+LAG_COLUMN = "_origin_lag"
 
 
 @dataclass
@@ -51,6 +57,7 @@ class TSBHBParams:
     item_variance_mode: str = "group"
     item_variance_shrink_strength: float = 20.0
     item_var_log: Optional[pd.Series] = None
+    fit_discount: float = 1.0
 
 
 @dataclass
@@ -79,7 +86,10 @@ class TSBHBOnlineState:
     item_variance_shrink_strength: float = 20.0
 
 
-def _beta_binom_log_marginal(s: int, n: int, alpha: float, beta: float) -> float:
+def _beta_binom_log_marginal(s: float, n: float, alpha: float, beta: float) -> float:
+    # Accepts real-valued (s, n): discounted sufficient statistics yield
+    # fractional pseudo-counts, for which this is the weighted-likelihood
+    # (power-prior) generalization of the Beta-Binomial marginal.
     if alpha <= 0 or beta <= 0 or s < 0 or n < s:
         return -np.inf
     return (
@@ -94,8 +104,8 @@ def _beta_binom_log_marginal(s: int, n: int, alpha: float, beta: float) -> float
 
 
 def _estimate_beta_hyperparams(counts: pd.DataFrame) -> tuple[float, float]:
-    s_arr = counts["s"].astype(int).to_numpy()
-    n_arr = counts["n"].astype(int).to_numpy()
+    s_arr = counts["s"].astype(float).to_numpy()
+    n_arr = counts["n"].astype(float).to_numpy()
     valid = (n_arr > 0) & (s_arr <= n_arr)
     s_arr, n_arr = s_arr[valid], n_arr[valid]
     if len(s_arr) == 0:
@@ -105,7 +115,7 @@ def _estimate_beta_hyperparams(counts: pd.DataFrame) -> tuple[float, float]:
         alpha, beta = float(params[0]), float(params[1])
         if alpha <= 0 or beta <= 0:
             return np.inf
-        ll = [_beta_binom_log_marginal(int(si), int(ni), alpha, beta) for si, ni in zip(s_arr, n_arr)]
+        ll = [_beta_binom_log_marginal(float(si), float(ni), alpha, beta) for si, ni in zip(s_arr, n_arr)]
         return -float(np.sum(ll))
 
     try:
@@ -156,22 +166,63 @@ def _clip_occurrence_discount(discount: float) -> float:
     return float(np.clip(val, 1e-6, 1.0))
 
 
+def _clip_fit_discount(discount: float) -> float:
+    try:
+        val = float(discount)
+    except Exception:
+        val = 1.0
+    if not np.isfinite(val):
+        val = 1.0
+    return float(np.clip(val, 1e-6, 1.0))
+
+
 def _compute_series_stats(
     train_df: pd.DataFrame,
     group_labels: Optional[pd.Series | Dict[str, str]] = None,
+    fit_discount: float = 1.0,
 ) -> pd.DataFrame:
-    data = train_df[["unique_id", "y"]].copy()
+    """Per-series sufficient statistics from the initialization window.
+
+    When ``fit_discount`` < 1, observations are exponentially down-weighted by
+    recency: an observation lagged by ``d`` periods behind the forecast origin
+    receives weight ``fit_discount ** d``. The resulting weighted pseudo-counts
+    give TSB-HB temporal forgetting (obsolescence tracking) while keeping every
+    downstream posterior update closed form.
+    """
+    fit_discount = _clip_fit_discount(fit_discount)
+    cols = ["unique_id", "ds", "y"]
+    if LAG_COLUMN in train_df.columns:
+        cols = cols + [LAG_COLUMN]
+    data = train_df[cols].copy()
     data["occ"] = (data["y"] > 0).astype(int)
     data["log_y"] = np.nan
     pos_mask = data["y"] > 0
     data.loc[pos_mask, "log_y"] = np.log(data.loc[pos_mask, "y"].astype(float))
 
+    if fit_discount < 1.0:
+        data = data.sort_values(["unique_id", "ds"], kind="stable")
+        if LAG_COLUMN in data.columns:
+            # Frame is a sub-sample of a longer window: use the lags recorded
+            # against the original forecast origin, not positions in this frame.
+            lag_from_origin = data[LAG_COLUMN].to_numpy(dtype=float)
+        else:
+            t_idx = data.groupby("unique_id", sort=False).cumcount()
+            series_len = data.groupby("unique_id", sort=False)["y"].transform("size")
+            lag_from_origin = (series_len - 1 - t_idx).to_numpy(dtype=float)
+        data["w"] = np.power(fit_discount, lag_from_origin)
+    else:
+        data["w"] = 1.0
+
+    data["w_occ"] = data["w"] * data["occ"]
+    data["w_log"] = data["w"] * data["log_y"].fillna(0.0) * data["occ"]
+    data["w_sq_log"] = data["w"] * np.square(data["log_y"].fillna(0.0)) * data["occ"]
+
     g = data.groupby("unique_id", sort=False)
-    n_obs = g["y"].size().astype(float)
-    s_obs = g["occ"].sum().astype(float)
-    n_pos = g["log_y"].count().astype(float)
-    sum_log = g["log_y"].sum(min_count=1).fillna(0.0).astype(float)
-    sum_sq_log = g["log_y"].apply(lambda x: float(np.square(x.dropna()).sum())).astype(float)
+    n_obs = g["w"].sum().astype(float)
+    s_obs = g["w_occ"].sum().astype(float)
+    n_pos = g["w_occ"].sum().astype(float)
+    sum_log = g["w_log"].sum().astype(float)
+    sum_sq_log = g["w_sq_log"].sum().astype(float)
 
     mean_log = (sum_log / n_pos.replace(0, np.nan)).fillna(np.nan)
     var_num = sum_sq_log - n_pos * (mean_log.fillna(0.0) ** 2)
@@ -192,6 +243,51 @@ def _compute_series_stats(
         index=n_obs.index,
     )
     return stats
+
+
+def split_for_hyper_estimation(
+    train_df: pd.DataFrame,
+    mode: str = "parity",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split the initialization window into a *structure* half and a *hyper* half.
+
+    Learning the pooling partition and estimating the group hyperparameters on
+    the same observations is a post-selection problem: the partition is chosen
+    so that within-group items look alike, and the subsequent moment/REML
+    estimate of the between-item variance ``tau^2`` then reads that induced
+    homogeneity as genuine, collapsing it toward zero. A collapsed ``tau^2``
+    drives the credibility weight ``n/(n + sigma^2/tau^2)`` to zero, i.e. every
+    item is replaced by its group mean. Estimating the hyperparameters on
+    observations that took no part in forming the partition removes the
+    dependence.
+
+    Modes:
+      - ``parity``: interleaved (even/odd positions). Both halves span the whole
+        window, so the recency profile and any drift are preserved in each.
+        Correct under the model's within-series exchangeability given
+        ``(p_i, mu_i, sigma_i^2)``, and the default for that reason.
+      - ``chrono``: first half / second half. Simpler to state, but the halves
+        differ in recency, which confounds the split with the forgetting axis.
+
+    Both frames carry :data:`LAG_COLUMN` so discounting still refers to the
+    original forecast origin. Returns ``(structure_df, hyper_df)``.
+    """
+    mode = str(mode).lower()
+    if mode not in {"parity", "chrono"}:
+        raise ValueError(f"Unknown hyper-split mode: {mode!r} (expected 'parity' or 'chrono')")
+
+    df = train_df.sort_values(["unique_id", "ds"], kind="stable").copy()
+    grouped = df.groupby("unique_id", sort=False)
+    t_idx = grouped.cumcount()
+    series_len = grouped["y"].transform("size")
+    df[LAG_COLUMN] = (series_len - 1 - t_idx).astype(float)
+
+    if mode == "parity":
+        structure_mask = (t_idx % 2 == 0).to_numpy()
+    else:
+        structure_mask = (t_idx < np.ceil(series_len.to_numpy(dtype=float) / 2.0)).to_numpy()
+
+    return df.loc[structure_mask].copy(), df.loc[~structure_mask].copy()
 
 
 def _estimate_size_hyper_from_stats(
@@ -256,10 +352,80 @@ def _estimate_size_hyper_from_stats(
     return mu_hat, sigma_sq, tau_sq
 
 
+def _credibility_shrink_tau(
+    stats: pd.DataFrame,
+    size_sigma_by_group: pd.Series,
+    size_tau_by_group: pd.Series,
+    tau_global: float,
+) -> pd.Series:
+    """Partially pool the group variance components toward the global one.
+
+    The plug-in REML estimate of the between-item variance ``tau_g^2`` sits on
+    the boundary whenever a group's observed spread of item means falls below
+    the average sampling variance ``sigma^2/n_i``. Recency discounting makes
+    that common: it shrinks the effective ``n_i``, inflating the sampling term,
+    while a learned partition shrinks the observed spread by construction. The
+    plug-in then reports ``tau_g^2 = 0``, i.e. "the items in this group are
+    identical", and the credibility weight ``n/(n + sigma^2/tau^2)`` collapses
+    to zero, discarding every item's own history in favour of the group mean.
+
+    The fix is the operation the model already applies to item means, applied
+    one level up: treat the per-group estimates as noisy draws around a common
+    value and pool them by Buhlmann credibility,
+
+        tau_g^2  <-  w_g * tau_g^2 + (1 - w_g) * tau_0^2,
+        w_g      =  V_0 / (V_0 + Var(tau_g^2)),
+
+    with ``Var(tau_g^2)`` the asymptotic variance of the variance-component
+    estimator, ``1 / (0.5 * sum_i (tau^2 + sigma^2/n_i)^{-2})``, evaluated at
+    the stabilized ``tau_0^2`` so it stays finite on the boundary, and ``V_0``
+    the between-group spread net of that estimation noise. Nothing is tuned:
+    both quantities are read off the same initialization window. A group whose
+    variance component is poorly determined is pulled to the global value; a
+    well-determined one keeps its own. With a single pool the map is the
+    identity, so global-pool results are untouched.
+    """
+    labels = [g for g in size_tau_by_group.index if g != GLOBAL_GROUP]
+    if len(labels) < 2:
+        return size_tau_by_group
+
+    tau_global = float(max(tau_global, 1e-6))
+    est_var: dict[str, float] = {}
+    for grp in labels:
+        sub = stats[(stats["group"].astype(str) == grp) & (stats["n_pos"] > 0)]
+        if len(sub) < 2:
+            est_var[grp] = np.inf
+            continue
+        sigma_g = float(max(size_sigma_by_group.get(grp, 1.0), 1e-9))
+        s_i = sigma_g / np.maximum(sub["n_pos"].to_numpy(dtype=float), 1.0)
+        info = 0.5 * float(np.sum(1.0 / np.square(tau_global + s_i)))
+        est_var[grp] = 1.0 / info if info > 1e-12 else np.inf
+
+    tau_hat = np.array([float(size_tau_by_group[g]) for g in labels], dtype=float)
+    var_hat = np.array([est_var[g] for g in labels], dtype=float)
+    finite = np.isfinite(var_hat)
+    if finite.sum() < 2:
+        return size_tau_by_group
+
+    # Between-group signal, net of the noise in the per-group estimates.
+    between = float(np.var(tau_hat[finite], ddof=1))
+    v0 = max(between - float(np.mean(var_hat[finite])), 0.0)
+
+    out = {g: float(v) for g, v in size_tau_by_group.items()}
+    for grp, v_g in zip(labels, var_hat):
+        if not np.isfinite(v_g):
+            out[grp] = tau_global
+            continue
+        omega = v0 / (v0 + v_g) if (v0 + v_g) > 0 else 0.0
+        out[grp] = max(omega * float(size_tau_by_group[grp]) + (1.0 - omega) * tau_global, 1e-6)
+    return pd.Series(out, dtype=float)
+
+
 def _estimate_group_hypers(
     stats: pd.DataFrame,
     fallback: Optional[tuple[float, float, float, float, float]] = None,
     group_shrink_strength: float = 0.0,
+    hyper_shrink: str = "off",
 ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     # Fallback tuple: (alpha, beta, size_mu, size_sigma, size_tau)
     if fallback is None:
@@ -334,6 +500,10 @@ def _estimate_group_hypers(
     size_mu_s = pd.Series(size_mu_by_group, dtype=float)
     size_sigma_s = pd.Series(size_sigma_by_group, dtype=float)
     size_tau_s = pd.Series(size_tau_by_group, dtype=float)
+
+    if str(hyper_shrink).lower() == "credibility":
+        size_tau_s = _credibility_shrink_tau(stats, size_sigma_s, size_tau_s, size_tau_g)
+
     return alpha_s, beta_s, size_mu_s, size_sigma_s, size_tau_s
 
 
@@ -463,6 +633,7 @@ def _fit_bootstrap_group_hypers(
     base_size_sigma_by_group: pd.Series,
     base_size_tau_by_group: pd.Series,
     group_shrink_strength: float = 0.0,
+    hyper_shrink: str = "off",
 ) -> Optional[Dict[str, pd.DataFrame]]:
     if n_draws <= 0:
         return None
@@ -511,6 +682,7 @@ def _fit_bootstrap_group_hypers(
                 float(base_size_tau_by_group.get(GLOBAL_GROUP, base_size_tau_by_group.iloc[0])),
             ),
             group_shrink_strength=group_shrink_strength,
+            hyper_shrink=hyper_shrink,
         )
         alpha_draws[col] = alpha_b.reindex(groups).fillna(base_alpha_by_group)
         beta_draws[col] = beta_b.reindex(groups).fillna(base_beta_by_group)
@@ -541,6 +713,9 @@ def fit_tsb_hb(
     prior_strength_power: float = 1.0,
     item_variance_mode: str = "group",
     item_variance_shrink_strength: float = 20.0,
+    fit_discount: float = 1.0,
+    hyper_train_df: Optional[pd.DataFrame] = None,
+    hyper_shrink: str = "off",
 ) -> TSBHBParams:
     """Fit TSB-HB with optional group-aware priors and hyperparameter bootstrap.
 
@@ -548,8 +723,22 @@ def fit_tsb_hb(
       Use this for regime-aware (ADI/CV^2 groups) or hierarchy-aware (M5 group) priors.
     - `bootstrap_draws`: if >0, estimates group-level hyperparameter uncertainty via
       bootstrap resampling across series.
+    - `fit_discount`: exponential recency weight applied to initialization-window
+      observations (1.0 reproduces the undiscounted released model).
+    - `hyper_train_df`: when given, the group-level hyperparameters (and their
+      bootstrap) are estimated from this frame instead of `train_df`, while the
+      per-item sufficient statistics still come from the full `train_df`. Pass
+      the hyper half of :func:`split_for_hyper_estimation` to keep learned
+      partitions from collapsing their own variance components.
     """
-    stats = _compute_series_stats(train_df, group_labels=group_labels)
+    fit_discount = _clip_fit_discount(fit_discount)
+    stats = _compute_series_stats(train_df, group_labels=group_labels, fit_discount=fit_discount)
+    if hyper_train_df is None:
+        hyper_stats = stats
+    else:
+        hyper_stats = _compute_series_stats(
+            hyper_train_df, group_labels=group_labels, fit_discount=fit_discount
+        )
     (
         alpha_by_group,
         beta_by_group,
@@ -557,8 +746,9 @@ def fit_tsb_hb(
         size_sigma_by_group,
         size_tau_by_group,
     ) = _estimate_group_hypers(
-        stats,
+        hyper_stats,
         group_shrink_strength=group_shrink_strength,
+        hyper_shrink=hyper_shrink,
     )
 
     p_post, shrunk_mean_log, posterior_var_mu, sigma_sq_process = _compute_posteriors_from_stats(
@@ -577,7 +767,7 @@ def fit_tsb_hb(
     )
 
     bootstrap_group_hypers = _fit_bootstrap_group_hypers(
-        stats=stats,
+        stats=hyper_stats,
         n_draws=int(max(bootstrap_draws, 0)),
         seed=bootstrap_seed,
         base_alpha_by_group=alpha_by_group,
@@ -586,6 +776,7 @@ def fit_tsb_hb(
         base_size_sigma_by_group=size_sigma_by_group,
         base_size_tau_by_group=size_tau_by_group,
         group_shrink_strength=group_shrink_strength,
+        hyper_shrink=hyper_shrink,
     )
 
     return TSBHBParams(
@@ -615,6 +806,7 @@ def fit_tsb_hb(
         item_variance_mode=str(item_variance_mode).lower(),
         item_variance_shrink_strength=float(max(item_variance_shrink_strength, 1e-6)),
         item_var_log=stats["var_log"].astype(float).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0.0),
+        fit_discount=fit_discount,
     )
 
 
@@ -874,6 +1066,7 @@ def initialize_online_tsb_hb(
     prior_strength_power: float = 1.0,
     item_variance_mode: str = "group",
     item_variance_shrink_strength: float = 20.0,
+    fit_discount: float = 1.0,
 ) -> TSBHBOnlineState:
     occ_discount = _clip_occurrence_discount(occurrence_discount)
     params = fit_tsb_hb(
@@ -890,6 +1083,7 @@ def initialize_online_tsb_hb(
         prior_strength_power=prior_strength_power,
         item_variance_mode=item_variance_mode,
         item_variance_shrink_strength=item_variance_shrink_strength,
+        fit_discount=fit_discount,
     )
     return TSBHBOnlineState(
         n_obs=params.n_obs.copy(),
@@ -979,3 +1173,148 @@ def update_online_tsb_hb(state: TSBHBOnlineState, observed_df: pd.DataFrame) -> 
     state.sum_sq_log = state.sum_sq_log.reindex(state.n_obs.index).fillna(0.0)
     state.group_labels = state.group_labels.reindex(state.n_obs.index).fillna(GLOBAL_GROUP).astype(str)
     return state
+
+
+# ---------------------------------------------------------------------------
+# Recency-discount selection (no-leakage internal validation)
+# ---------------------------------------------------------------------------
+
+DEFAULT_DISCOUNT_GRID: tuple[float, ...] = (1.0, 0.999, 0.997, 0.995, 0.99, 0.98, 0.95, 0.90)
+
+
+def _split_init_head_tail(init_df: pd.DataFrame, val_ratio: float = 0.2, min_head: int = 8) -> tuple[pd.DataFrame, pd.DataFrame]:
+    tmp = init_df.sort_values(["unique_id", "ds"], kind="stable").copy()
+    tmp["t"] = tmp.groupby("unique_id").cumcount()
+    tmp["L"] = tmp.groupby("unique_id")["t"].transform("max") + 1
+    head_cut = np.maximum(np.ceil(tmp["L"] * (1.0 - val_ratio)), float(min_head))
+    head_mask = tmp["t"] < head_cut
+    cols = ["unique_id", "ds", "y"]
+    return tmp.loc[head_mask, cols].copy(), tmp.loc[~head_mask, cols].copy()
+
+
+def select_fit_discount(
+    init_df: pd.DataFrame,
+    group_labels: Optional[pd.Series | Dict[str, str]] = None,
+    grid: Optional[Sequence[float]] = None,
+    quantiles: Sequence[float] = (0.5, 0.75, 0.9),
+    val_ratio: float = 0.2,
+    item_variance_mode: str = "conjugate",
+    item_variance_shrink_strength: float = 20.0,
+    hyper_split: str = "off",
+    hyper_shrink: str = "off",
+) -> tuple[float, pd.DataFrame]:
+    """Select the recency discount on an internal chronological split of the
+    initialization window (first (1-val_ratio) to fit, last val_ratio to score).
+
+    Scoring is mean pinball loss over ``quantiles``, scaled per series by the
+    mean absolute demand in the fitting head so that high-volume SKUs do not
+    dominate selection. No out-of-sample targets are consumed.
+    Returns (best_discount, diagnostics_frame).
+    """
+    candidates = [float(w) for w in (grid if grid is not None else DEFAULT_DISCOUNT_GRID)]
+    head_df, tail_df = _split_init_head_tail(init_df, val_ratio=val_ratio)
+    if head_df.empty or tail_df.empty:
+        return 1.0, pd.DataFrame({"discount": candidates, "scaled_pinball": np.nan})
+    return _score_discount_grid(
+        head_df, tail_df, candidates, group_labels, quantiles,
+        item_variance_mode, item_variance_shrink_strength, hyper_split, hyper_shrink,
+    )
+
+
+def _score_discount_grid(
+    head_df: pd.DataFrame,
+    tail_df: pd.DataFrame,
+    candidates: Sequence[float],
+    group_labels: Optional[pd.Series | Dict[str, str]],
+    quantiles: Sequence[float],
+    item_variance_mode: str,
+    item_variance_shrink_strength: float,
+    hyper_split: str = "off",
+    hyper_shrink: str = "off",
+) -> tuple[float, pd.DataFrame]:
+
+    scale = head_df.groupby("unique_id")["y"].apply(lambda s: float(np.mean(np.abs(s))))
+    scale = scale.replace(0.0, np.nan)
+    global_scale = float(np.nanmedian(scale.to_numpy())) if np.isfinite(np.nanmedian(scale.to_numpy())) else 1.0
+    scale = scale.fillna(max(global_scale, 1e-9))
+
+    scale = head_df.groupby("unique_id")["y"].apply(lambda s: float(np.mean(np.abs(s))))
+    scale = scale.replace(0.0, np.nan)
+    med = np.nanmedian(scale.to_numpy())
+    global_scale = float(med) if np.isfinite(med) else 1.0
+    scale = scale.fillna(max(global_scale, 1e-9))
+
+    # Score the same specification that will be fitted: when the released model
+    # estimates hyperparameters on a held-out half, so must the selector.
+    hyper_head_df = (
+        None if str(hyper_split).lower() == "off"
+        else split_for_hyper_estimation(head_df, mode=hyper_split)[1]
+    )
+
+    rows: list[dict[str, float]] = []
+    best_w, best_score = 1.0, np.inf
+    for w in candidates:
+        params = fit_tsb_hb(
+            head_df,
+            group_labels=group_labels,
+            item_variance_mode=item_variance_mode,
+            item_variance_shrink_strength=item_variance_shrink_strength,
+            fit_discount=w,
+            hyper_train_df=hyper_head_df,
+            hyper_shrink=hyper_shrink,
+        )
+        preds = predict_tsb_hb(params, tail_df, quantiles=list(quantiles), include_hyper_uncertainty=False)
+        merged = tail_df[["unique_id", "ds", "y"]].merge(preds, on=["unique_id", "ds"], how="left")
+        series_scale = merged["unique_id"].map(scale).fillna(max(global_scale, 1e-9)).to_numpy(dtype=float)
+        losses = []
+        for q in quantiles:
+            err = merged["y"].to_numpy(dtype=float) - merged[f"q_{q}"].to_numpy(dtype=float)
+            pinball = np.maximum(q * err, (q - 1.0) * err)
+            losses.append(pinball / np.maximum(series_scale, 1e-9))
+        score = float(np.nanmean(np.concatenate(losses)))
+        rows.append({"discount": w, "scaled_pinball": score})
+        if np.isfinite(score) and score < best_score - 1e-12:
+            best_score, best_w = score, w
+
+    return best_w, pd.DataFrame(rows)
+
+
+def select_pooling_and_discount(
+    init_df: pd.DataFrame,
+    candidate_labels: Dict[str, Optional[pd.Series]],
+    grid: Optional[Sequence[float]] = None,
+    quantiles: Sequence[float] = (0.5, 0.75, 0.9),
+    val_ratio: float = 0.2,
+    item_variance_mode: str = "conjugate",
+    item_variance_shrink_strength: float = 20.0,
+    hyper_split: str = "off",
+    hyper_shrink: str = "off",
+) -> tuple[str, float, pd.DataFrame]:
+    """Jointly select the pooling structure and the recency discount on the
+    same internal chronological split used by :func:`select_fit_discount`.
+
+    ``candidate_labels`` maps a structure name (e.g. 'global', 'taxonomy',
+    'mixture') to its group-label Series (None = single global pool). Returns
+    (best_structure_name, best_discount, diagnostics_frame). No out-of-sample
+    targets are consumed.
+    """
+    candidates = [float(w) for w in (grid if grid is not None else DEFAULT_DISCOUNT_GRID)]
+    head_df, tail_df = _split_init_head_tail(init_df, val_ratio=val_ratio)
+    if head_df.empty or tail_df.empty:
+        first = next(iter(candidate_labels))
+        return first, 1.0, pd.DataFrame()
+
+    all_rows: list[pd.DataFrame] = []
+    best_name, best_w, best_score = next(iter(candidate_labels)), 1.0, np.inf
+    for name, labels in candidate_labels.items():
+        w, diag = _score_discount_grid(
+            head_df, tail_df, candidates, labels, quantiles,
+            item_variance_mode, item_variance_shrink_strength, hyper_split, hyper_shrink,
+        )
+        diag = diag.assign(structure=name)
+        all_rows.append(diag)
+        score = float(diag["scaled_pinball"].min())
+        if np.isfinite(score) and score < best_score - 1e-12:
+            best_score, best_name, best_w = score, name, w
+
+    return best_name, best_w, pd.concat(all_rows, ignore_index=True)

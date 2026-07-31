@@ -28,8 +28,12 @@ from models.tsb_hb import (
     initialize_online_tsb_hb,
     predict_online_tsb_hb,
     predict_tsb_hb,
+    select_fit_discount,
+    select_pooling_and_discount,
     update_online_tsb_hb,
 )
+from models.mixture_pooling import mixture_group_labels
+from models.tsb_hb import split_for_hyper_estimation
 from models.baselines import fit_predict_baselines
 from models.hurdle_baselines import (
     fit_hurdle_global_lognormal,
@@ -38,6 +42,7 @@ from models.hurdle_baselines import (
     predict_hurdle_local_lognormal,
 )
 from models.conformal import fit_predict_conformal_baselines
+from models.tweedie_baseline import fit_predict_tweedie_prob_panel
 from metrics import coverage_rate, pit_values, compute_adi_cv2, classify_adi_cv2
 
 # Optional neural baseline
@@ -57,9 +62,9 @@ def _normalize_prob_baseline_mode(baseline_mode: str | None) -> str:
     mode = str(baseline_mode or "paper").lower()
     if mode == "full":
         mode = "extended"
-    valid = {"paper", "extended", "hurdle_only", "hb_only"}
+    valid = {"paper", "extended", "hurdle_only", "hb_only", "fast_classic"}
     if mode not in valid:
-        raise ValueError("baseline_mode must be one of: paper, extended, full, hurdle_only, hb_only.")
+        raise ValueError("baseline_mode must be one of: paper, extended, full, hurdle_only, hb_only, fast_classic.")
     return mode
 
 
@@ -72,11 +77,39 @@ def _include_hurdle_prob_baselines(baseline_mode: str) -> bool:
 
 
 def _include_conformal_prob_baselines(baseline_mode: str) -> bool:
-    return baseline_mode in {"paper", "extended"}
+    return baseline_mode in {"paper", "extended", "fast_classic"}
 
 
 def _qcols(quantiles: list[float]) -> list[str]:
     return [f"q_{q}" for q in quantiles]
+
+
+def _parse_quantiles(raw: str | None) -> list[float]:
+    if raw is None or str(raw).strip() == "":
+        return QUANTILES.copy()
+    vals: list[float] = []
+    for part in str(raw).replace(";", ",").split(","):
+        token = part.strip()
+        if not token:
+            continue
+        q = float(token)
+        if q > 1.0:
+            q = q / 100.0
+        if not 0.0 < q < 1.0:
+            raise ValueError("--quantiles values must be in (0,1), or percentages like 50,75,90.")
+        vals.append(round(q, 6))
+    vals = sorted(set(vals))
+    if not vals:
+        raise ValueError("--quantiles did not contain any valid values.")
+    return vals
+
+
+def _has_qcols(df: pd.DataFrame, quantiles: list[float]) -> bool:
+    return all(f"q_{q}" in df.columns for q in quantiles)
+
+
+def _supports_standard_coverage(df: pd.DataFrame) -> bool:
+    return _has_qcols(df, [0.1, 0.25, 0.75, 0.9])
 
 
 def _build_regime_group_labels(train_df: pd.DataFrame) -> pd.Series | None:
@@ -85,6 +118,60 @@ def _build_regime_group_labels(train_df: pd.DataFrame) -> pd.Series | None:
         return None
     feats["category"] = feats.apply(classify_adi_cv2, axis=1)
     return feats.set_index("unique_id")["category"].astype(str)
+
+
+def _split_prob_frames(
+    train_df: pd.DataFrame,
+    hb_label_split: str,
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """Return (structure_frame, hyper_frame) for the requested sample-split mode."""
+    if str(hb_label_split).lower() == "off":
+        return train_df, None
+    return split_for_hyper_estimation(train_df, mode=hb_label_split)
+
+
+def _resolve_prob_group_labels(
+    train_df: pd.DataFrame,
+    hb_grouping: str,
+    hb_regime_aware: bool,
+    hb_mixture_k: int,
+    hb_fit_discount: float,
+) -> pd.Series | None:
+    """Resolve pooling labels on the given fitting frame (no out-of-sample data)."""
+    grouping = str(hb_grouping).lower()
+    if grouping == "legacy":
+        grouping = "taxonomy" if hb_regime_aware else "global"
+    if grouping == "global":
+        return None
+    if grouping == "taxonomy":
+        return _build_regime_group_labels(train_df)
+    if grouping == "mixture":
+        res = mixture_group_labels(train_df, k=hb_mixture_k, fit_discount=hb_fit_discount)
+        return res.labels
+    raise ValueError(f"Unknown hb_grouping: {hb_grouping}")
+
+
+def _resolve_prob_fit_discount(
+    spec: str,
+    init_set: pd.DataFrame,
+    group_labels: pd.Series | None,
+    item_variance_mode: str,
+    variance_prior_df: float,
+    hyper_split: str = "off",
+    hyper_shrink: str = "off",
+) -> float:
+    text = str(spec).strip().lower()
+    if text in {"auto", "select"}:
+        w, _ = select_fit_discount(
+            init_set,
+            group_labels=group_labels,
+            item_variance_mode=item_variance_mode,
+            item_variance_shrink_strength=variance_prior_df,
+            hyper_split=hyper_split,
+            hyper_shrink=hyper_shrink,
+        )
+        return w
+    return float(text)
 
 
 def _enforce_monotonic_quantiles(df: pd.DataFrame, quantiles: list[float]) -> pd.DataFrame:
@@ -147,6 +234,57 @@ def _pinball_mean(eval_merged: pd.DataFrame, quantiles: list[float]) -> float:
     return float(np.mean(losses))
 
 
+def _series_naive_scale(init_set: pd.DataFrame) -> pd.Series:
+    """Per-series scale for normalized pinball (MASE-like denominator)."""
+    tmp = init_set[["unique_id", "ds", "y"]].sort_values(["unique_id", "ds"]).copy()
+    tmp["lag1"] = tmp.groupby("unique_id")["y"].shift(1)
+    tmp["abs_diff"] = (tmp["y"] - tmp["lag1"]).abs()
+    scale = tmp.groupby("unique_id")["abs_diff"].mean()
+    return scale
+
+
+def _scaled_pinball_table(
+    eval_merged: pd.DataFrame,
+    init_set: pd.DataFrame,
+    quantiles: list[float],
+) -> pd.DataFrame:
+    scales = _series_naive_scale(init_set)
+    rows: list[dict[str, float | str | int]] = []
+    for model, dfm in eval_merged.groupby("model"):
+        for q in quantiles:
+            col = f"q_{q}"
+            if col not in dfm.columns:
+                continue
+            dfx = dfm.dropna(subset=[col]).copy()
+            if dfx.empty:
+                continue
+            err = dfx["y"] - dfx[col]
+            dfx["pinball"] = np.maximum(q * err, (q - 1) * err)
+            by_uid = dfx.groupby("unique_id", as_index=False)["pinball"].mean()
+            by_uid["scale"] = by_uid["unique_id"].map(scales)
+            valid = by_uid[(by_uid["scale"] > 0) & np.isfinite(by_uid["scale"])].copy()
+            if valid.empty:
+                rows.append(
+                    {
+                        "model": model,
+                        "quantile": q,
+                        "scaled_pinball": float("nan"),
+                        "n_series_scaled": 0,
+                    }
+                )
+                continue
+            valid["scaled_pinball_uid"] = valid["pinball"] / valid["scale"]
+            rows.append(
+                {
+                    "model": model,
+                    "quantile": q,
+                    "scaled_pinball": float(valid["scaled_pinball_uid"].mean()),
+                    "n_series_scaled": int(valid.shape[0]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _fit_hb_location_scale(
     init_set: pd.DataFrame,
     quantiles: list[float],
@@ -163,13 +301,25 @@ def _fit_hb_location_scale(
     lambda_max: float,
     lambda_steps: int,
     coverage_weight: float,
+    hb_grouping: str = "legacy",
+    hb_mixture_k: int = 0,
+    hb_fit_discount: float = 1.0,
+    hb_label_split: str = "off",
+    hb_hyper_shrink: str = "off",
 ) -> dict[str, float | str]:
     default: dict[str, float | str] = {"mode": "location_scale", "delta": 0.0, "lambda": 1.0}
     train_fit, calib_set = _split_hb_calibration_train(init_set, calibration_ratio=calibration_ratio)
     if calib_set.empty or train_fit.empty:
         return default
 
-    group_labels = _build_regime_group_labels(train_fit) if hb_regime_aware else None
+    structure_fit, hyper_fit = _split_prob_frames(train_fit, hb_label_split)
+    group_labels = _resolve_prob_group_labels(
+        structure_fit,
+        hb_grouping=hb_grouping,
+        hb_regime_aware=hb_regime_aware,
+        hb_mixture_k=hb_mixture_k,
+        hb_fit_discount=hb_fit_discount,
+    )
     params = fit_tsb_hb(
         train_fit,
         group_labels=group_labels,
@@ -178,6 +328,9 @@ def _fit_hb_location_scale(
         group_shrink_strength=hb_group_shrink_strength,
         item_variance_mode=hb_item_variance_mode,
         item_variance_shrink_strength=hb_variance_prior_df,
+        fit_discount=hb_fit_discount,
+        hyper_train_df=hyper_fit,
+        hyper_shrink=hb_hyper_shrink,
     )
     calib_q = predict_tsb_hb(
         params,
@@ -221,10 +374,14 @@ def _fit_hb_location_scale(
         pin = _pinball_mean(merged, quantiles=quantiles)
         if not np.isfinite(pin):
             continue
-        cov50 = coverage_rate(merged, 0.25, 0.75, 0.5)["Coverage@50"]
-        cov80 = coverage_rate(merged, 0.1, 0.9, 0.8)["Coverage@80"]
-        gap50 = abs(float(cov50) - 0.5)
-        gap80 = abs(float(cov80) - 0.8)
+        if _supports_standard_coverage(merged):
+            cov50 = coverage_rate(merged, 0.25, 0.75, 0.5)["Coverage@50"]
+            cov80 = coverage_rate(merged, 0.1, 0.9, 0.8)["Coverage@80"]
+            gap50 = abs(float(cov50) - 0.5)
+            gap80 = abs(float(cov80) - 0.8)
+        else:
+            gap50 = 0.0
+            gap80 = 0.0
         obj = float(pin + w_cov * (gap50 + gap80))
         if obj < best_obj:
             best_obj = obj
@@ -314,18 +471,25 @@ def _predict_non_hb_prob_models_once(
     eval_df: pd.DataFrame,
     quantiles: list[float],
     baseline_mode: str = "paper",
+    with_tweedie: bool = False,
+    tweedie_lags: int = 14,
+    tweedie_power: float = 1.5,
+    tweedie_alpha: float = 0.1,
+    tweedie_max_iter: int = 1000,
+    freq: str = "D",
+    season_length: int = 7,
 ) -> pd.DataFrame:
     qcols = _qcols(quantiles)
     if eval_df.empty:
         return pd.DataFrame(columns=["model", "unique_id", "ds"] + qcols)
     baseline_mode = _normalize_prob_baseline_mode(baseline_mode)
-    if baseline_mode == "hb_only":
+    if baseline_mode == "hb_only" and not with_tweedie:
         return pd.DataFrame(columns=["model", "unique_id", "ds"] + qcols)
 
     frames: list[pd.DataFrame] = []
     if _include_parametric_prob_baselines(baseline_mode):
         eval_h = eval_df["unique_id"].value_counts()
-        sf_q = fit_predict_baselines(train_df, eval_h, freq="D", probabilistic=True, levels=[80, 50])
+        sf_q = fit_predict_baselines(train_df, eval_h, freq=freq, probabilistic=True, levels=[80, 50], season_length=season_length)
         arima = _extract_sf_quantiles(sf_q, "AutoARIMA", quantiles)
         theta = _extract_sf_quantiles(sf_q, "AutoTheta", quantiles)
         frames.extend([arima, theta])
@@ -350,6 +514,17 @@ def _predict_non_hb_prob_models_once(
         global_q = global_q[["model", "unique_id", "ds"] + qcols]
 
         frames.extend([local_q, global_q])
+    if with_tweedie:
+        tw_q = fit_predict_tweedie_prob_panel(
+            train_df,
+            eval_df,
+            quantiles=quantiles,
+            lags=tweedie_lags,
+            power=tweedie_power,
+            alpha=tweedie_alpha,
+            max_iter=tweedie_max_iter,
+        )
+        frames.append(tw_q)
 
     if not frames:
         return pd.DataFrame(columns=["model", "unique_id", "ds"] + qcols)
@@ -371,6 +546,16 @@ def _predict_prob_models_once(
     baseline_mode: str = "paper",
     include_conformal: bool = False,
     conformal_cal_ratio: float = 0.2,
+    with_tweedie: bool = False,
+    tweedie_lags: int = 14,
+    tweedie_power: float = 1.5,
+    tweedie_alpha: float = 0.1,
+    tweedie_max_iter: int = 1000,
+    hb_fit_discount: float = 1.0,
+    freq: str = "D",
+    season_length: int = 7,
+    hb_label_split: str = "off",
+    hb_hyper_shrink: str = "off",
 ) -> pd.DataFrame:
     qcols = _qcols(quantiles)
     if eval_df.empty:
@@ -384,6 +569,9 @@ def _predict_prob_models_once(
         group_shrink_strength=hb_group_shrink_strength,
         item_variance_mode=hb_item_variance_mode,
         item_variance_shrink_strength=hb_variance_prior_df,
+        fit_discount=hb_fit_discount,
+        hyper_train_df=_split_prob_frames(train_df, hb_label_split)[1],
+        hyper_shrink=hb_hyper_shrink,
     )
     tsbhb_q = predict_tsb_hb(
         params,
@@ -404,6 +592,13 @@ def _predict_prob_models_once(
         eval_df,
         quantiles,
         baseline_mode=baseline_mode,
+        with_tweedie=with_tweedie,
+        tweedie_lags=tweedie_lags,
+        tweedie_power=tweedie_power,
+        tweedie_alpha=tweedie_alpha,
+        tweedie_max_iter=tweedie_max_iter,
+        freq=freq,
+        season_length=season_length,
     )
 
     all_frames = [tsbhb_q, non_hb]
@@ -414,7 +609,7 @@ def _predict_prob_models_once(
             train_df, eval_df,
             quantiles=quantiles,
             cal_ratio=conformal_cal_ratio,
-            freq="D",
+            freq=freq,
         )
         if not conformal_q.empty:
             all_frames.append(conformal_q)
@@ -515,6 +710,156 @@ def _predict_deepar_fixed(
     return out[["model", "unique_id", "ds"] + qcols]
 
 
+def _predict_iets_prob_fixed(
+    init_set: pd.DataFrame,
+    eval_set: pd.DataFrame,
+    quantiles: list[float],
+    *,
+    rscript: str,
+    script_path: Path | None,
+    seed: int,
+    occurrence: str,
+    timeout_seconds: int | None,
+    per_series_timeout_seconds: int,
+    n_jobs: int,
+    cache_path: Path | None,
+) -> pd.DataFrame:
+    from models.iets_baseline import fit_predict_iets_prob_panel
+
+    return fit_predict_iets_prob_panel(
+        init_set,
+        eval_set,
+        quantiles=quantiles,
+        rscript=rscript,
+        script_path=script_path,
+        seed=seed,
+        occurrence=occurrence,
+        timeout_seconds=timeout_seconds,
+        per_series_timeout_seconds=per_series_timeout_seconds,
+        n_jobs=n_jobs,
+        cache_path=cache_path,
+    )
+
+
+def _predict_deep_renewal_fixed(
+    init_set: pd.DataFrame,
+    eval_set: pd.DataFrame,
+    quantiles: list[float],
+    horizon: int,
+    context_length: int,
+    num_layers: int,
+    num_cells: int,
+    dropout_rate: float,
+    epochs: int,
+    batches_per_epoch: int,
+    batch_size: int,
+    num_samples: int,
+    learning_rate: float,
+) -> pd.DataFrame:
+    try:
+        from gluonts.dataset.common import ListDataset
+        from gluonts.evaluation.backtest import make_evaluation_predictions
+        from gluonts.mx.model.renewal import DeepRenewalProcessEstimator
+        from gluonts.mx.trainer import Trainer
+    except ImportError as exc:
+        raise ImportError(
+            "Deep Renewal Process requested but GluonTS MXNet components are unavailable. "
+            "Install gluonts and mxnet."
+        ) from exc
+
+    if horizon <= 0:
+        raise ValueError("DeepRenewal horizon must be positive.")
+    qcols = _qcols(quantiles)
+    eval_idx = eval_set[["unique_id", "ds"]].copy()
+    eval_idx["k"] = eval_idx.groupby("unique_id").cumcount()
+    k_max = int(eval_idx["k"].max()) if not eval_idx.empty else -1
+    n_blocks = int(np.ceil((k_max + 1) / horizon)) if k_max >= 0 else 0
+
+    hist = init_set[["unique_id", "ds", "y"]].copy().sort_values(["unique_id", "ds"]).reset_index(drop=True)
+    block_rows: list[pd.DataFrame] = []
+    q_to_name = {0.1: "q_0.1", 0.25: "q_0.25", 0.5: "q_0.5", 0.75: "q_0.75", 0.9: "q_0.9"}
+
+    def _build_list_dataset(source_df: pd.DataFrame) -> "ListDataset":
+        entries = []
+        for uid, grp in source_df.groupby("unique_id", sort=False):
+            g = grp.sort_values("ds")
+            entries.append(
+                {
+                    "item_id": uid,
+                    "start": pd.Timestamp(g["ds"].iloc[0]),
+                    "target": g["y"].to_numpy(dtype=float),
+                }
+            )
+        return ListDataset(entries, freq="D")
+
+    train_ds = _build_list_dataset(hist)
+    estimator = DeepRenewalProcessEstimator(
+        prediction_length=horizon,
+        context_length=max(int(context_length), 1),
+        num_layers=max(int(num_layers), 1),
+        num_cells=max(int(num_cells), 1),
+        dropout_rate=float(max(dropout_rate, 0.0)),
+        batch_size=max(int(batch_size), 1),
+        trainer=Trainer(
+            epochs=max(int(epochs), 1),
+            num_batches_per_epoch=max(int(batches_per_epoch), 1),
+            learning_rate=float(max(learning_rate, 1e-6)),
+        ),
+    )
+    predictor = estimator.train(train_ds)
+
+    for b in range(n_blocks):
+        block_start = b * horizon
+        block_end = block_start + horizon - 1
+        block_eval = eval_idx[(eval_idx["k"] >= block_start) & (eval_idx["k"] <= block_end)].copy()
+        if block_eval.empty:
+            continue
+        infer_ds = _build_list_dataset(hist)
+        fcst_iter, _ = make_evaluation_predictions(
+            dataset=infer_ds,
+            predictor=predictor,
+            num_samples=max(int(num_samples), 100),
+        )
+        forecasts = list(fcst_iter)
+        infer_ids = [entry["item_id"] for entry in infer_ds]
+        if len(forecasts) != len(infer_ids):
+            raise RuntimeError("DeepRenewal forecast count mismatch.")
+
+        rows = []
+        for uid, fcst in zip(infer_ids, forecasts):
+            uid_block = block_eval[block_eval["unique_id"] == uid].sort_values("k")
+            if uid_block.empty:
+                continue
+            n_take = len(uid_block)
+            row = uid_block[["unique_id", "ds"]].copy()
+            for q in quantiles:
+                qf = float(np.clip(q, 1e-6, 1 - 1e-6))
+                vals = np.asarray(fcst.quantile(qf), dtype=float)[:n_take]
+                row[q_to_name.get(q, f"q_{q}")] = vals
+            rows.append(row)
+        if rows:
+            block_out = pd.concat(rows, ignore_index=True)
+            block_rows.append(block_out)
+            advance = block_out[["unique_id", "ds", "q_0.5"]].rename(columns={"q_0.5": "y"})
+            advance["y"] = advance["y"].fillna(0.0)
+            hist = (
+                pd.concat([hist, advance], ignore_index=True)
+                .sort_values(["unique_id", "ds"])
+                .reset_index(drop=True)
+            )
+
+    if not block_rows:
+        return pd.DataFrame(columns=["model", "unique_id", "ds"] + qcols)
+
+    out = pd.concat(block_rows, ignore_index=True)
+    for c in qcols:
+        if c not in out.columns:
+            out[c] = np.nan
+    out = _enforce_monotonic_quantiles(out, quantiles=quantiles)
+    out["model"] = "DeepRenewal"
+    return out[["model", "unique_id", "ds"] + qcols]
+
+
 def plot_calibration_curve(
     eval_merged: pd.DataFrame,
     quantiles: list[float],
@@ -578,13 +923,19 @@ def plot_pit_histogram(eval_merged: pd.DataFrame, quantiles: list[float], out_di
 def _coverage_summary(eval_merged: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for model, dfm in eval_merged.groupby("model"):
-        cov50 = coverage_rate(dfm, 0.25, 0.75, 0.5)
-        cov80 = coverage_rate(dfm, 0.1, 0.9, 0.8)
         row = {"model": model, "n_obs": int(len(dfm))}
-        row.update(cov50)
-        row.update(cov80)
-        row["CoverageGap@50"] = float(abs(cov50["Coverage@50"] - 0.50))
-        row["CoverageGap@80"] = float(abs(cov80["Coverage@80"] - 0.80))
+        if _has_qcols(dfm, [0.25, 0.75]):
+            cov50 = coverage_rate(dfm, 0.25, 0.75, 0.5)
+            row.update(cov50)
+            row["CoverageGap@50"] = float(abs(cov50["Coverage@50"] - 0.50))
+        else:
+            row.update({"Coverage@50": np.nan, "AIW@50": np.nan, "CoverageGap@50": np.nan})
+        if _has_qcols(dfm, [0.1, 0.9]):
+            cov80 = coverage_rate(dfm, 0.1, 0.9, 0.8)
+            row.update(cov80)
+            row["CoverageGap@80"] = float(abs(cov80["Coverage@80"] - 0.80))
+        else:
+            row.update({"Coverage@80": np.nan, "AIW@80": np.nan, "CoverageGap@80": np.nan})
         rows.append(row)
     if not rows:
         return pd.DataFrame(
@@ -658,19 +1009,27 @@ def _ordered_slice_values(slice_type: str, values: pd.Series) -> list[str]:
 
 
 def _prob_metric_row(dfm: pd.DataFrame, quantiles: list[float]) -> dict[str, float]:
-    cov50 = coverage_rate(dfm, 0.25, 0.75, 0.5)
-    cov80 = coverage_rate(dfm, 0.1, 0.9, 0.8)
     pin = evaluate_prob_models(dfm, quantiles=quantiles)
     pin_mean = float(pin["pinball"].mean()) if not pin.empty else float("nan")
     row = {
-        "Coverage@50": float(cov50["Coverage@50"]),
-        "AIW@50": float(cov50["AIW@50"]),
-        "Coverage@80": float(cov80["Coverage@80"]),
-        "AIW@80": float(cov80["AIW@80"]),
-        "CoverageGap@50": float(abs(float(cov50["Coverage@50"]) - 0.50)),
-        "CoverageGap@80": float(abs(float(cov80["Coverage@80"]) - 0.80)),
+        "Coverage@50": np.nan,
+        "AIW@50": np.nan,
+        "Coverage@80": np.nan,
+        "AIW@80": np.nan,
+        "CoverageGap@50": np.nan,
+        "CoverageGap@80": np.nan,
         "pinball_mean": pin_mean,
     }
+    if _has_qcols(dfm, [0.25, 0.75]):
+        cov50 = coverage_rate(dfm, 0.25, 0.75, 0.5)
+        row["Coverage@50"] = float(cov50["Coverage@50"])
+        row["AIW@50"] = float(cov50["AIW@50"])
+        row["CoverageGap@50"] = float(abs(float(cov50["Coverage@50"]) - 0.50))
+    if _has_qcols(dfm, [0.1, 0.9]):
+        cov80 = coverage_rate(dfm, 0.1, 0.9, 0.8)
+        row["Coverage@80"] = float(cov80["Coverage@80"])
+        row["AIW@80"] = float(cov80["AIW@80"])
+        row["CoverageGap@80"] = float(abs(float(cov80["Coverage@80"]) - 0.80))
     row["GoalScore@80"] = row["AIW@80"] * (1.0 + row["CoverageGap@80"])
 
     dfp = dfm[dfm["y"] > 0].copy()
@@ -690,22 +1049,30 @@ def _prob_metric_row(dfm: pd.DataFrame, quantiles: list[float]) -> dict[str, flo
         )
         return row
 
-    cov50_pos = coverage_rate(dfp, 0.25, 0.75, 0.5)
-    cov80_pos = coverage_rate(dfp, 0.1, 0.9, 0.8)
     pin_pos = evaluate_prob_models(dfp, quantiles=quantiles)
     pin_pos_mean = float(pin_pos["pinball"].mean()) if not pin_pos.empty else float("nan")
 
     row.update(
         {
-            "Coverage@50_pos": float(cov50_pos["Coverage@50"]),
-            "AIW@50_pos": float(cov50_pos["AIW@50"]),
-            "Coverage@80_pos": float(cov80_pos["Coverage@80"]),
-            "AIW@80_pos": float(cov80_pos["AIW@80"]),
-            "CoverageGap@50_pos": float(abs(float(cov50_pos["Coverage@50"]) - 0.50)),
-            "CoverageGap@80_pos": float(abs(float(cov80_pos["Coverage@80"]) - 0.80)),
+            "Coverage@50_pos": np.nan,
+            "AIW@50_pos": np.nan,
+            "Coverage@80_pos": np.nan,
+            "AIW@80_pos": np.nan,
+            "CoverageGap@50_pos": np.nan,
+            "CoverageGap@80_pos": np.nan,
             "pinball_mean_pos": pin_pos_mean,
         }
     )
+    if _has_qcols(dfp, [0.25, 0.75]):
+        cov50_pos = coverage_rate(dfp, 0.25, 0.75, 0.5)
+        row["Coverage@50_pos"] = float(cov50_pos["Coverage@50"])
+        row["AIW@50_pos"] = float(cov50_pos["AIW@50"])
+        row["CoverageGap@50_pos"] = float(abs(float(cov50_pos["Coverage@50"]) - 0.50))
+    if _has_qcols(dfp, [0.1, 0.9]):
+        cov80_pos = coverage_rate(dfp, 0.1, 0.9, 0.8)
+        row["Coverage@80_pos"] = float(cov80_pos["Coverage@80"])
+        row["AIW@80_pos"] = float(cov80_pos["AIW@80"])
+        row["CoverageGap@80_pos"] = float(abs(float(cov80_pos["Coverage@80"]) - 0.80))
     row["GoalScore@80_pos"] = row["AIW@80_pos"] * (1.0 + row["CoverageGap@80_pos"])
     return row
 
@@ -770,10 +1137,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--data", type=Path, default=default_data_file())
     ap.add_argument(
         "--dataset",
-        choices=["online", "m5"],
+        choices=["online", "m5", "auto", "carparts", "raf"],
         default="online",
-        help="Dataset for probabilistic experiment: 'online' (Online Retail) or 'm5' (M5 competition).",
+        help="Dataset for probabilistic experiment: 'online' (Online Retail), 'm5', or monthly intermittent panels 'auto'/'carparts'/'raf' (last-h holdout).",
     )
+    ap.add_argument("--holdout-h", type=int, default=None, help="Fixed evaluation horizon (last-h holdout) for auto/carparts/raf; defaults: auto=6, carparts=6, raf=12.")
     ap.add_argument(
         "--m5-sales",
         type=Path,
@@ -794,11 +1162,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--out", type=Path, default=default_out_dir())
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--max-series", type=int, default=None, help="Optional cap on number of series for faster end-to-end runs.")
     ap.add_argument("--min-len", type=int, default=30)
     ap.add_argument("--init-ratio", type=float, default=1.0 / 3.0)
+    ap.add_argument(
+        "--quantiles",
+        type=str,
+        default="0.1,0.25,0.5,0.75,0.9",
+        help="Comma-separated quantiles to forecast/evaluate. Values may be probabilities or percentages, e.g. 0.5,0.75,0.9 or 50,75,90.",
+    )
     ap.add_argument("--protocol", choices=["fixed", "walk_forward"], default="fixed")
     ap.add_argument("--walk-step", type=int, default=1, help="Block size (steps) for walk-forward protocol.")
-    ap.add_argument("--baseline-mode", choices=["paper", "extended", "full", "hurdle_only", "hb_only"], default=None, help="Baseline set for both fixed and walk-forward: paper=TSB-HB + AutoARIMA/AutoTheta + conformal wrappers for point baselines, extended=paper + hurdle baselines, full=legacy alias for extended, hurdle_only=TSB-HB + hurdle baselines, hb_only=TSB-HB only.")
+    ap.add_argument("--baseline-mode", choices=["paper", "extended", "full", "hurdle_only", "hb_only", "fast_classic"], default=None, help="Baseline set for both fixed and walk-forward: paper=TSB-HB + AutoARIMA/AutoTheta + conformal wrappers for point baselines, extended=paper + hurdle baselines, full=legacy alias for extended, hurdle_only=TSB-HB + hurdle baselines, hb_only=TSB-HB only, fast_classic=TSB-HB + conformal wrappers only (no AutoARIMA/AutoTheta/hurdle).")
     ap.add_argument("--hb-regime-aware", dest="hb_regime_aware", action="store_true", default=True, help="Use ADI/CV^2 regime-aware HB priors.")
     ap.add_argument("--no-hb-regime-aware", dest="hb_regime_aware", action="store_false", help="Disable regime-aware priors and use global HB priors.")
     ap.add_argument("--hb-group-shrink-strength", type=float, default=0.0, help="Extra shrink from group-level hyperparameters back to global hyperparameters (0 disables).")
@@ -809,6 +1184,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--hb-occ-discount", type=float, default=1.0, help="Discount factor for dynamic occurrence update (0<d<=1).")
     ap.add_argument("--hb-item-variance-mode", choices=["group", "conjugate"], default="conjugate", help="Process variance mode for size: group or conjugate.")
     ap.add_argument("--hb-variance-prior-df", type=float, default=20.0, help="Prior degrees of freedom for conjugate variance model (larger = stronger shrinkage).")
+    ap.add_argument("--hb-grouping", choices=["legacy", "global", "taxonomy", "mixture", "select"], default="legacy", help="Pooling structure for TSB-HB: legacy=follow --hb-regime-aware, global=single pool, taxonomy=fixed ADI/CV^2 groups, mixture=learned mixture-of-priors pooling (EM, BIC-selected K), select=jointly select structure and discount on the internal validation split (REMIX).")
+    ap.add_argument("--hb-mixture-k", type=int, default=0, help="Number of mixture components for learned pooling (0 = select by BIC).")
+    ap.add_argument("--hb-hyper-shrink", choices=["off", "credibility"], default="off", help="Regularize the group-level variance components by Buhlmann credibility toward the global value (data-determined weights, no tuned parameter). Prevents the collapse of tau^2 that drives the size credibility weight to zero under learned partitions and strong discounting. off reproduces the released model.")
+    ap.add_argument("--hb-label-split", choices=["off", "parity", "chrono"], default="off", help="Sample-split the initialization window so the pooling structure is learned on one half and the group hyperparameters estimated on the other (per-item statistics still use the full window). Removes the post-selection collapse of the between-item variance under learned partitions. parity=interleaved (preserves recency in both halves), chrono=first/second half.")
+    ap.add_argument("--hb-fit-discount", type=str, default="1.0", help="Recency discount for initialization-window sufficient statistics: a float in (0,1], or 'auto' to select on an internal chronological split.")
     ap.add_argument("--hb-bootstrap-draws", type=int, default=20, help="Bootstrap draws for TSB-HB hyperparameter uncertainty (fixed protocol).")
     ap.add_argument("--hb-disable-hyper-uncertainty", action="store_true", help="Disable bootstrap hyperparameter uncertainty even when draws > 0.")
     ap.add_argument("--hb-calibration-mode", choices=["none", "location_scale"], default="location_scale", help="Optional post-hoc calibration for TSB-HB quantiles. The paper release uses location_scale.")
@@ -822,41 +1202,198 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--no-conformal-baselines", dest="include_conformal", action="store_false", help="Exclude conformal baselines.")
     ap.add_argument("--conformal-cal-ratio", type=float, default=0.2, help="Calibration ratio for conformal prediction split (fraction of training data held out).")
     ap.add_argument("--with-deepar", action="store_true", help="Include DeepAR baseline (fixed protocol only).")
+    ap.add_argument("--with-deep-renewal", action="store_true", help="Include GluonTS Deep Renewal Process baseline (fixed protocol only).")
+    ap.add_argument("--with-tweedie", action="store_true", help="Include Tweedie autoregressive probabilistic baseline.")
+    ap.add_argument("--tweedie-lags", type=int, default=14, help="Number of lag features for Tweedie baseline.")
+    ap.add_argument("--tweedie-power", type=float, default=1.5, help="Tweedie variance power (1<p<2 typical for intermittent demand).")
+    ap.add_argument("--tweedie-alpha", type=float, default=0.1, help="L2 regularization strength for Tweedie baseline.")
+    ap.add_argument("--tweedie-max-iter", type=int, default=1000, help="Max optimizer iterations for Tweedie baseline.")
+    ap.add_argument(
+        "--with-iets",
+        action="store_true",
+        help="Include iETS probabilistic forecasts via R smooth (fixed protocol only; uses prediction intervals).",
+    )
+    ap.add_argument("--iets-rscript", type=str, default="Rscript", help="Rscript executable for iETS.")
+    ap.add_argument(
+        "--iets-script",
+        type=Path,
+        default=None,
+        help="Path to iets_panel_forecast_prob.R (default: <repo>/scripts/iets_panel_forecast_prob.R).",
+    )
+    ap.add_argument(
+        "--iets-occurrence",
+        type=str,
+        default="auto",
+        help="smooth::adam occurrence argument for iETS (e.g. auto, none, fixed).",
+    )
+    ap.add_argument("--iets-timeout", type=int, default=3600, help="Overall timeout in seconds for the iETS R subprocess.")
+    ap.add_argument("--iets-per-series-timeout", type=int, default=10, help="Per-series elapsed-time limit passed to the iETS R script.")
+    ap.add_argument("--iets-n-jobs", type=int, default=1, help="Number of parallel Rscript workers for iETS probabilistic forecasts.")
+    ap.add_argument("--iets-cache", type=Path, default=None, help="Optional CSV cache path for iETS probabilistic forecasts.")
     ap.add_argument("--horizon", type=int, default=10, help="Block size for DeepAR rolling forecast.")
     ap.add_argument("--input-size", type=int, default=14)
     ap.add_argument("--start-padding-enabled", action="store_true", default=True)
     ap.add_argument("--max-steps", type=int, default=500, help="Max training steps for DeepAR.")
+    ap.add_argument("--drp-context-length", type=int, default=30, help="Context length for DeepRenewal.")
+    ap.add_argument("--drp-num-layers", type=int, default=2, help="RNN layers for DeepRenewal.")
+    ap.add_argument("--drp-num-cells", type=int, default=40, help="RNN hidden units for DeepRenewal.")
+    ap.add_argument("--drp-dropout", type=float, default=0.1, help="Dropout for DeepRenewal.")
+    ap.add_argument("--drp-epochs", type=int, default=20, help="Training epochs for DeepRenewal.")
+    ap.add_argument("--drp-batches-per-epoch", type=int, default=50, help="Number of batches per epoch for DeepRenewal.")
+    ap.add_argument("--drp-batch-size", type=int, default=32, help="Batch size for DeepRenewal.")
+    ap.add_argument("--drp-num-samples", type=int, default=400, help="Prediction samples for DeepRenewal.")
+    ap.add_argument("--drp-learning-rate", type=float, default=1e-3, help="Learning rate for DeepRenewal trainer.")
     return ap
+
+
+def _evaluate_scaled_pinball(
+    init_set: pd.DataFrame,
+    eval_merged: pd.DataFrame,
+    quantiles: list[float],
+) -> pd.DataFrame:
+    """Scaled pinball loss (M5-Uncertainty SPL): per-series pinball scaled by the
+    in-sample mean absolute naive difference. Series with a zero denominator are
+    excluded (same convention as RMSSE)."""
+    init_sorted = init_set.sort_values(["unique_id", "ds"]).copy()
+    init_sorted["abs_diff"] = (init_sorted["y"] - init_sorted.groupby("unique_id")["y"].shift(1)).abs()
+    scale = init_sorted.groupby("unique_id")["abs_diff"].mean()
+    scale = scale[scale > 0]
+
+    rows: list[dict[str, float | str]] = []
+    for model, dfm in eval_merged.groupby("model"):
+        dfm = dfm[dfm["unique_id"].isin(scale.index)].copy()
+        if dfm.empty:
+            continue
+        denom = dfm["unique_id"].map(scale).to_numpy(dtype=float)
+        for q in quantiles:
+            col = f"q_{q}"
+            if col not in dfm.columns:
+                continue
+            valid = dfm[col].notna().to_numpy()
+            if not valid.any():
+                continue
+            err = (dfm["y"].to_numpy(dtype=float) - dfm[col].to_numpy(dtype=float))[valid]
+            pin = np.maximum(q * err, (q - 1.0) * err) / denom[valid]
+            rows.append({"model": model, "quantile": q, "scaled_pinball": float(np.mean(pin))})
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        mean_rows = out.groupby("model", as_index=False)["scaled_pinball"].mean()
+        mean_rows["quantile"] = "mean"
+        out = pd.concat([out, mean_rows[["model", "quantile", "scaled_pinball"]]], ignore_index=True)
+    return out
 
 
 def run(args: argparse.Namespace) -> None:
     if args.protocol == "walk_forward" and args.with_deepar:
         raise ValueError("--with-deepar is currently supported only for --protocol fixed.")
+    if args.protocol == "walk_forward" and args.with_deep_renewal:
+        raise ValueError("--with-deep-renewal is currently supported only for --protocol fixed.")
+    if args.protocol == "walk_forward" and args.with_iets:
+        raise ValueError("--with-iets is currently supported only for --protocol fixed.")
 
     set_seed(args.seed)
     out_dir: Path = args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    freq = "D"
+    season_length = 7
+    monthly_h_defaults = {"auto": 6, "carparts": 6, "raf": 12}
     if args.dataset == "online":
         df_raw = load_online_retail(args.data)
         df = preprocess_online_retail(df_raw)
+    elif args.dataset in monthly_h_defaults:
+        from utils import find_repo_root
+        from data_loading import load_generic_long, train_eval_split_last_h
+
+        freq = "MS"
+        season_length = 12
+        df = load_generic_long(find_repo_root() / "data" / f"{args.dataset}_long.csv")
     else:
         sales_df, calendar_df = load_m5_long(args.m5_sales, args.m5_calendar)
         df = preprocess_m5(sales_df, calendar_df, sample_size=args.m5_sample_size)
-    init_set, eval_set = train_eval_split_fixed_origin(df, init_ratio=args.init_ratio, min_len=args.min_len)
+    if args.max_series is not None:
+        max_series = max(int(args.max_series), 1)
+        uids = df["unique_id"].drop_duplicates()
+        if len(uids) > max_series:
+            keep = np.random.choice(uids.to_numpy(), size=max_series, replace=False)
+            df = df[df["unique_id"].isin(keep)].copy()
+    if args.dataset in monthly_h_defaults:
+        if args.protocol != "fixed":
+            raise ValueError(f"{args.dataset} supports only --protocol fixed (last-h holdout).")
+        from data_loading import train_eval_split_last_h as _split_last_h
+
+        holdout_h = int(args.holdout_h) if args.holdout_h else monthly_h_defaults[args.dataset]
+        init_set, eval_set = _split_last_h(df, h=holdout_h)
+    else:
+        init_set, eval_set = train_eval_split_fixed_origin(df, init_ratio=args.init_ratio, min_len=args.min_len)
     if eval_set.empty:
         raise ValueError("Evaluation set is empty; verify split parameters and input data.")
 
-    qcols = _qcols(QUANTILES)
-    hb_group_labels = _build_regime_group_labels(init_set) if args.hb_regime_aware else None
+    quantiles = _parse_quantiles(args.quantiles)
+    qcols = _qcols(quantiles)
+    hb_variance_prior_df = float(max(args.hb_variance_prior_df, 2.1))
+
+    # Resolve pooling + discount. 'select' jointly chooses both on the
+    # internal validation split (REMIX); otherwise resolve independently.
+    hb_label_split = str(getattr(args, "hb_label_split", "off")).lower()
+    hb_hyper_shrink = str(getattr(args, "hb_hyper_shrink", "off")).lower()
+    if hb_hyper_shrink != "off":
+        print(f"Variance-component regularization: {hb_hyper_shrink}")
+    structure_set, _ = _split_prob_frames(init_set, hb_label_split)
+    if hb_label_split != "off":
+        print(f"Hyperparameter sample split: mode={hb_label_split}, structure rows={len(structure_set)}")
+
+    hb_grouping_effective = getattr(args, "hb_grouping", "legacy")
+    if hb_grouping_effective == "select":
+        mix_res = mixture_group_labels(structure_set, k=int(getattr(args, "hb_mixture_k", 0)))
+        candidates = {
+            "global": None,
+            "taxonomy": _build_regime_group_labels(structure_set),
+            "mixture": mix_res.labels,
+        }
+        sel_name, hb_fit_discount, sel_diag = select_pooling_and_discount(
+            init_set, candidates,
+            item_variance_mode=str(args.hb_item_variance_mode),
+            item_variance_shrink_strength=hb_variance_prior_df,
+            hyper_split=hb_label_split,
+            hyper_shrink=hb_hyper_shrink,
+        )
+        hb_group_labels = candidates[sel_name]
+        hb_grouping_effective = sel_name
+        sel_diag.to_csv(out_dir / "remix_selection_diagnostics.csv", index=False)
+        print(f"REMIX selection: structure={sel_name} (mixture K={mix_res.k}), discount={hb_fit_discount}")
+    else:
+        discount_base_labels = (
+            _build_regime_group_labels(structure_set)
+            if (hb_grouping_effective in {"legacy", "taxonomy"} and args.hb_regime_aware)
+            else None
+        )
+        hb_fit_discount = _resolve_prob_fit_discount(
+            getattr(args, "hb_fit_discount", "1.0"),
+            init_set,
+            discount_base_labels,
+            str(args.hb_item_variance_mode),
+            hb_variance_prior_df,
+            hyper_split=hb_label_split,
+            hyper_shrink=hb_hyper_shrink,
+        )
+        hb_group_labels = _resolve_prob_group_labels(
+            structure_set,
+            hb_grouping=hb_grouping_effective,
+            hb_regime_aware=bool(args.hb_regime_aware),
+            hb_mixture_k=int(getattr(args, "hb_mixture_k", 0)),
+            hb_fit_discount=hb_fit_discount,
+        )
+    if hb_fit_discount < 1.0 or getattr(args, "hb_grouping", "legacy") in {"mixture", "select"}:
+        print(f"TSB-HB config: grouping={getattr(args, 'hb_grouping', 'legacy')}, fit_discount={hb_fit_discount}")
+
     hb_use_hyper_uncertainty = (not args.hb_disable_hyper_uncertainty) and (args.hb_bootstrap_draws > 0)
     baseline_mode = _normalize_prob_baseline_mode(args.baseline_mode)
-    hb_variance_prior_df = float(max(args.hb_variance_prior_df, 2.1))
     hb_calibration: Optional[dict[str, float | str]] = None
     if args.hb_calibration_mode == "location_scale":
         hb_calibration = _fit_hb_location_scale(
             init_set=init_set,
-            quantiles=QUANTILES,
+            quantiles=quantiles,
             hb_regime_aware=bool(args.hb_regime_aware),
             hb_group_shrink_strength=float(max(args.hb_group_shrink_strength, 0.0)),
             hb_item_variance_mode=str(args.hb_item_variance_mode),
@@ -870,6 +1407,11 @@ def run(args: argparse.Namespace) -> None:
             lambda_max=float(args.hb_calibration_lambda_max),
             lambda_steps=max(int(args.hb_calibration_lambda_steps), 2),
             coverage_weight=float(max(args.hb_calibration_coverage_weight, 0.0)),
+            hb_grouping=hb_grouping_effective,
+            hb_mixture_k=int(getattr(args, "hb_mixture_k", 0)),
+            hb_fit_discount=hb_fit_discount,
+            hb_label_split=hb_label_split,
+            hb_hyper_shrink=hb_hyper_shrink,
         )
     if hb_calibration is not None:
         pd.DataFrame(
@@ -886,7 +1428,7 @@ def run(args: argparse.Namespace) -> None:
         all_q = _predict_prob_models_once(
             init_set,
             eval_set,
-            quantiles=QUANTILES,
+            quantiles=quantiles,
             hb_group_labels=hb_group_labels,
             hb_bootstrap_draws=max(int(args.hb_bootstrap_draws), 0),
             hb_bootstrap_seed=args.seed,
@@ -898,18 +1440,60 @@ def run(args: argparse.Namespace) -> None:
             baseline_mode=baseline_mode,
             include_conformal=bool(args.include_conformal),
             conformal_cal_ratio=float(args.conformal_cal_ratio),
+            with_tweedie=bool(args.with_tweedie),
+            tweedie_lags=int(max(args.tweedie_lags, 1)),
+            tweedie_power=float(args.tweedie_power),
+            tweedie_alpha=float(max(args.tweedie_alpha, 0.0)),
+            tweedie_max_iter=int(max(args.tweedie_max_iter, 100)),
+            hb_fit_discount=hb_fit_discount,
+            freq=freq,
+            season_length=season_length,
+            hb_label_split=hb_label_split,
+            hb_hyper_shrink=hb_hyper_shrink,
         )
         if args.with_deepar:
             deepar_q = _predict_deepar_fixed(
                 init_set=init_set,
                 eval_set=eval_set,
-                quantiles=QUANTILES,
+                quantiles=quantiles,
                 horizon=args.horizon,
                 input_size=args.input_size,
                 start_padding_enabled=args.start_padding_enabled,
                 max_steps=args.max_steps,
             )
             all_q = pd.concat([all_q, deepar_q], ignore_index=True)
+        if args.with_deep_renewal:
+            drp_q = _predict_deep_renewal_fixed(
+                init_set=init_set,
+                eval_set=eval_set,
+                quantiles=quantiles,
+                horizon=int(args.horizon),
+                context_length=int(args.drp_context_length),
+                num_layers=int(args.drp_num_layers),
+                num_cells=int(args.drp_num_cells),
+                dropout_rate=float(args.drp_dropout),
+                epochs=int(args.drp_epochs),
+                batches_per_epoch=int(args.drp_batches_per_epoch),
+                batch_size=int(args.drp_batch_size),
+                num_samples=int(args.drp_num_samples),
+                learning_rate=float(args.drp_learning_rate),
+            )
+            all_q = pd.concat([all_q, drp_q], ignore_index=True)
+        if args.with_iets:
+            iets_q = _predict_iets_prob_fixed(
+                init_set=init_set,
+                eval_set=eval_set,
+                quantiles=quantiles,
+                rscript=str(args.iets_rscript),
+                script_path=args.iets_script,
+                seed=int(args.seed),
+                occurrence=str(args.iets_occurrence),
+                timeout_seconds=int(args.iets_timeout) if int(args.iets_timeout) > 0 else None,
+                per_series_timeout_seconds=int(max(args.iets_per_series_timeout, 1)),
+                n_jobs=int(max(args.iets_n_jobs, 1)),
+                cache_path=args.iets_cache,
+            )
+            all_q = pd.concat([all_q, iets_q], ignore_index=True)
     else:
         step_outputs = []
         hb_state = None
@@ -924,13 +1508,14 @@ def run(args: argparse.Namespace) -> None:
                 occurrence_discount=float(args.hb_occ_discount),
                 item_variance_mode=str(args.hb_item_variance_mode),
                 item_variance_shrink_strength=hb_variance_prior_df,
+                fit_discount=hb_fit_discount,
             )
         for frame in iter_walk_forward_frames(init_set, eval_set, step_size=args.walk_step):
             if hb_state is not None:
                 tsbhb_q = predict_online_tsb_hb(
                     hb_state,
                     frame.target,
-                    quantiles=QUANTILES,
+                    quantiles=quantiles,
                     n_samples=2000,
                     include_hyper_uncertainty=False,
                 )
@@ -939,7 +1524,7 @@ def run(args: argparse.Namespace) -> None:
                         tsbhb_q[c] = np.nan
                 tsbhb_q = _apply_hb_calibration(
                     tsbhb_q,
-                    quantiles=QUANTILES,
+                    quantiles=quantiles,
                     calibration=hb_calibration,
                 )
                 tsbhb_q["model"] = PROB_TSBHB_MODEL
@@ -948,14 +1533,19 @@ def run(args: argparse.Namespace) -> None:
                 non_hb_q = _predict_non_hb_prob_models_once(
                     frame.history,
                     frame.target,
-                    quantiles=QUANTILES,
+                    quantiles=quantiles,
                     baseline_mode=baseline_mode,
+                    with_tweedie=bool(args.with_tweedie),
+                    tweedie_lags=int(max(args.tweedie_lags, 1)),
+                    tweedie_power=float(args.tweedie_power),
+                    tweedie_alpha=float(max(args.tweedie_alpha, 0.0)),
+                    tweedie_max_iter=int(max(args.tweedie_max_iter, 100)),
                 )
                 step_frames = [tsbhb_q, non_hb_q]
                 if args.include_conformal and _include_conformal_prob_baselines(baseline_mode):
                     cp_q = fit_predict_conformal_baselines(
                         frame.history, frame.target,
-                        quantiles=QUANTILES,
+                        quantiles=quantiles,
                         cal_ratio=float(args.conformal_cal_ratio),
                         freq="D",
                     )
@@ -967,7 +1557,7 @@ def run(args: argparse.Namespace) -> None:
                 step_q = _predict_prob_models_once(
                     frame.history,
                     frame.target,
-                    quantiles=QUANTILES,
+                    quantiles=quantiles,
                     hb_group_labels=hb_group_labels,
                     hb_bootstrap_draws=0,
                     hb_bootstrap_seed=args.seed,
@@ -979,6 +1569,14 @@ def run(args: argparse.Namespace) -> None:
                     baseline_mode=baseline_mode,
                     include_conformal=bool(args.include_conformal),
                     conformal_cal_ratio=float(args.conformal_cal_ratio),
+                    with_tweedie=bool(args.with_tweedie),
+                    tweedie_lags=int(max(args.tweedie_lags, 1)),
+                    tweedie_power=float(args.tweedie_power),
+                    tweedie_alpha=float(max(args.tweedie_alpha, 0.0)),
+                    tweedie_max_iter=int(max(args.tweedie_max_iter, 100)),
+                    hb_fit_discount=hb_fit_discount,
+                    hb_label_split=hb_label_split,
+                    hb_hyper_shrink=hb_hyper_shrink,
                 )
             step_outputs.append(step_q)
         if not step_outputs:
@@ -995,13 +1593,21 @@ def run(args: argparse.Namespace) -> None:
     if eval_merged.empty:
         raise ValueError("Merged probabilistic evaluation frame is empty; no predictions matched evaluation timestamps.")
 
-    plot_calibration_curve(eval_merged, QUANTILES, out_dir)
-    plot_pit_histogram(eval_merged, QUANTILES, out_dir)
+    plot_calibration_curve(eval_merged, quantiles, out_dir)
+    plot_pit_histogram(eval_merged, quantiles, out_dir)
 
-    pinball_df = evaluate_prob_models(eval_merged, QUANTILES)
+    pinball_df = evaluate_prob_models(eval_merged, quantiles)
     pinball_df.insert(0, "protocol", args.protocol)
     pinball_df.to_csv(out_dir / "prob_pinball.csv", index=False)
+
+    spl_df = _evaluate_scaled_pinball(init_set, eval_merged, quantiles)
+    spl_df.insert(0, "protocol", args.protocol)
+    spl_df.to_csv(out_dir / "prob_pinball_scaled.csv", index=False)
     pinball_df.to_csv(out_dir / "probabilistic_forecast_pinball_results.csv", index=False)
+    scaled_pinball_df = _scaled_pinball_table(eval_merged, init_set=init_set, quantiles=quantiles)
+    if not scaled_pinball_df.empty:
+        scaled_pinball_df.insert(0, "protocol", args.protocol)
+    scaled_pinball_df.to_csv(out_dir / "prob_pinball_scaled.csv", index=False)
 
     coverage_df = _coverage_summary(eval_merged)
     coverage_df.insert(0, "protocol", args.protocol)
@@ -1024,19 +1630,27 @@ def run(args: argparse.Namespace) -> None:
     coverage_pos_df.insert(0, "protocol", args.protocol)
     coverage_pos_df.to_csv(out_dir / "coverage_summary_positive.csv", index=False)
 
-    pit_df = _pit_long(eval_merged, QUANTILES)
+    pit_df = _pit_long(eval_merged, quantiles)
     pit_df.insert(0, "protocol", args.protocol)
     pit_df.to_csv(out_dir / "pit_values.csv", index=False)
 
     pinball_mean = pinball_df.groupby(["protocol", "model"], as_index=False)["pinball"].mean().rename(columns={"pinball": "pinball_mean"})
+    scaled_pinball_mean = pd.DataFrame(columns=["protocol", "model", "scaled_pinball_mean"])
+    if not scaled_pinball_df.empty:
+        scaled_pinball_mean = (
+            scaled_pinball_df.groupby(["protocol", "model"], as_index=False)["scaled_pinball"]
+            .mean()
+            .rename(columns={"scaled_pinball": "scaled_pinball_mean"})
+        )
     pinball_pos_mean = pd.DataFrame(columns=["protocol", "model", "pinball_mean_pos"])
     if not eval_pos.empty:
-        pinball_pos_df = evaluate_prob_models(eval_pos, QUANTILES)
+        pinball_pos_df = evaluate_prob_models(eval_pos, quantiles)
         if not pinball_pos_df.empty:
             pinball_pos_df.insert(0, "protocol", args.protocol)
             pinball_pos_mean = pinball_pos_df.groupby(["protocol", "model"], as_index=False)["pinball"].mean().rename(columns={"pinball": "pinball_mean_pos"})
 
     prob_metrics = coverage_df.merge(pinball_mean, on=["protocol", "model"], how="left")
+    prob_metrics = prob_metrics.merge(scaled_pinball_mean, on=["protocol", "model"], how="left")
     prob_metrics = prob_metrics.merge(coverage_pos_df, on=["protocol", "model"], how="left")
     prob_metrics = prob_metrics.merge(pinball_pos_mean, on=["protocol", "model"], how="left")
     prob_metrics["GoalScore@80"] = prob_metrics["AIW@80"] * (1.0 + prob_metrics["CoverageGap@80"])
@@ -1046,7 +1660,7 @@ def run(args: argparse.Namespace) -> None:
     _write_prob_slice_metrics(
         init_set=init_set,
         eval_merged=eval_merged,
-        quantiles=QUANTILES,
+        quantiles=quantiles,
         out_dir=out_dir,
         protocol=args.protocol,
     )

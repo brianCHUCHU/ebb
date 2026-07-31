@@ -239,3 +239,6 @@ lightning_logs/
 # Misc
 *.swp
 *.csv
+
+# Raw downloaded datasets (regenerate via src/tools/convert_intermittent_datasets.py)
+data/raw_new/

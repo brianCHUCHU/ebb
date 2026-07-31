@@ -89,6 +89,7 @@ def fit_predict_baselines(
     tsb_grid: Optional[Sequence[Tuple[float, float]]] = None,
     probabilistic: bool = False,
     levels: Optional[List[int]] = None,
+    season_length: int = 7,
 ) -> pd.DataFrame:
     """Fit StatsForecast baselines on panel data and return predictions."""
     _, M = _import_statsforecast()
@@ -114,8 +115,8 @@ def fit_predict_baselines(
 
     if probabilistic:
         models = [
-            M["AutoARIMA"](season_length=7),
-            M["AutoTheta"](season_length=7),
+            M["AutoARIMA"](season_length=int(max(season_length, 1))),
+            M["AutoTheta"](season_length=int(max(season_length, 1))),
         ]
     else:
         models = [
