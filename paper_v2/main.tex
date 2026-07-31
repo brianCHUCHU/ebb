@@ -34,36 +34,28 @@ Scalable Empirical-Bayes Forecasting for Intermittent Demand}
 \maketitle
 
 \begin{abstract}
-Forecasters for intermittent demand face two structural decisions that are
-almost always hard-coded: \emph{how to pool} information across items
-(fixed ADI/CV$^2$ taxonomies, or a single global prior) and \emph{how to
-weight} information over time (uniformly, or with a hand-tuned smoothing
-constant). We present \REMIX{} (Recency-weighted Empirical-bayes
-MIXtures), a hierarchical empirical-Bayes forecaster that learns both
-decisions from data: an exponential recency discount applied directly to
-the sufficient statistics gives closed-form obsolescence tracking, and the
-pooling partition is chosen among a single pool, the classical taxonomy,
-and BIC-selected mixture components---jointly with the discount---on an
-internal chronological validation split. Estimation stays closed form,
-deterministic, and $O(N)$. Theory carries the design: classical TSB is
-recovered \emph{exactly} in the noninformative-prior corner of the model
-plane; finite-sample MSE bounds under occurrence drift yield an
-$O(\delta^{2/3})$ tracking rate with the stationary model recovered as
-drift vanishes; and a two-sided credibility bound shows that the same
-discount that keeps the shared prior active also caps how fine a pooling
-partition the window can identify---an explicit resolution limit on
-learned structure. Across five public panels (Online Retail, M5, Auto,
-Carparts, RAF; 19{,}000+ evaluated series), \REMIX{} attains the best mean
-scaled pinball loss on every dataset against classical, conformal,
-state-space, and Tweedie baselines, and on the point metrics where the
-stationary hierarchical model trails classical methods, forgetting closes
-the gap: on M5 RMSSE from behind to best overall, on Online Retail MAE
-from $3.4\%$ behind TSB to within $1.6\%$. Measuring the two axes
-separately is what makes the picture usable: essentially all of the
-first-order gain comes from forgetting, the choice \emph{among} pooling
-partitions moves every metric by under $1\%$, and we show by three
-independent repair attempts that this is the resolution limit rather than
-an estimation defect.
+Intermittent-demand forecasters routinely fix two structural choices in
+advance: \emph{how to pool} evidence across items (a fixed ADI/CV$^2$
+taxonomy, or one global prior) and \emph{how to weight} it over time
+(uniformly, or with a hand-set smoothing constant). We study what happens
+when both are selected from data instead. \REMIX{} is a hierarchical
+empirical-Bayes forecaster in which an exponential recency discount is
+applied to the sufficient statistics used for both the item-level
+posterior and the hyperparameter fit; the pooling partition---a single
+pool, the classical taxonomy, or BIC-selected mixture components---is
+scored jointly with the discount on an internal chronological validation
+split. Estimation stays closed form, deterministic, and $O(N)$. Two
+theoretical results frame the design: classical TSB is a boundary case of
+the family, exact under a self-consistent initialization; and a two-sided
+credibility bound shows that the discount which keeps the pooled prior
+active also shrinks the effective sample behind each group, giving a
+practical condition for how finely a partition can be resolved from the
+window. Across five public panels (19{,}000+ evaluated series), \REMIX{}
+attains the best mean scaled pinball loss among non-degenerate methods on
+every panel, and forgetting accounts for most of the improvement. Finer
+learned partitions supply interpretable structure and cold-start benefits
+but little aggregate gain---a negative result we establish by three
+targeted repairs and a controlled simulation.
 \end{abstract}
 
 % =========================================================================
@@ -71,37 +63,53 @@ an estimation defect.
 % =========================================================================
 
 Intermittent demand---long runs of zeros punctuated by sporadic positive
-quantities---dominates spare-parts logistics, long-tail e-commerce, and
-hospital supply chains. Its two modeling traditions embody complementary
-insights. \emph{Local exponential smoothing} (Croston, SBA, TSB)
-\citep{croston1972,syntetos2005accuracy,teunter2011} knows that demand
-processes drift and die, and forgets old data accordingly; but it
-estimates every series in isolation and specifies no probabilistic model.
-\emph{Hierarchical Bayesian} approaches
-\citep{chapados2014,seeger2016,pitkin2024} know that thousands of sparse
-series should share statistical strength; but they typically assume
-stationarity within the estimation window, fix the pooling structure by
-hand, and lean on sampling-based inference that strains at catalog scale.
+quantities---is pervasive in spare-parts logistics, long-tail e-commerce,
+and hospital supply chains. Two modeling traditions address it with
+complementary strengths. \emph{Local exponential smoothing} (Croston,
+SBA, TSB) \citep{croston1972,syntetos2005accuracy,teunter2011} is
+designed to adapt as demand processes drift and die, discounting old
+observations at a rate set by a smoothing constant; it is cheap and
+robust, but estimates each series in isolation and does not natively
+provide a full predictive distribution. \emph{Hierarchical probabilistic}
+approaches \citep{chapados2014,seeger2016,pitkin2024} supply shrinkage
+across thousands of sparse series together with calibrated uncertainty;
+in their intermittent-demand instantiations they commonly pre-specify the
+pooling structure or the temporal evolution, and their inference is
+typically heavier than a closed-form update.
 
-Each tradition hard-codes what the other learns. This paper's premise is
-that \emph{both} structural decisions---how strongly to pool across items,
-and how quickly to forget across time---should be coordinates of a single
-model, selected from data. Figure~\ref{fig:overview} summarizes the
-resulting design space: the horizontal axis is prior strength $\phi$
-(cross-sectional shrinkage), the vertical axis is a recency discount $w$
-(temporal forgetting). Classical TSB lives in the no-pooling corner with
-$w<1$; stationary hierarchical models live on the $w{=}1$ edge; \REMIX{}
-selects its position on both axes---and the pooling \emph{partition}
-itself---on a chronological validation split of the training window.
+Existing procedures therefore tend to fix at least one of two structural
+choices: how evidence is shared across items, and how historical
+observations are discounted. We represent both choices inside one model
+family and select candidate pairs by chronological validation.
+Figure~\ref{fig:overview} sketches the resulting design space. The
+vertical coordinate is a recency discount $w$ (temporal forgetting). The
+horizontal coordinate is the strength of cross-series pooling, which is
+not a free parameter we search over but the consequence of two things
+we do choose: the partition of items into groups, and the empirical-Bayes
+estimate of each group's prior. Classical TSB sits in the no-pooling
+region with $w<1$; stationary hierarchical estimators sit on the $w{=}1$
+edge.
+
+The paper's organizing finding is asymmetric, and it is the reason we
+report both axes separately. Forgetting is the first-order driver of
+forecast improvement. Pooling remains valuable---having \emph{a} shared
+prior is worth a great deal---but refining \emph{which} items share it is
+often second-order, and we give a reason: forgetting reduces the
+effective sample behind each group, and with it the evidence available to
+resolve fine structure. Forgetting preserves the need for pooling, but
+not necessarily the information needed to estimate a fine pooling
+structure.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.96\textwidth]{figs/fig1_overview.pdf}
 \caption{\textbf{(a)} Two structural axes span classical intermittent-demand
-forecasting: cross-series pooling and temporal forgetting $(1-w)$.
-Classical TSB and stationary hierarchical EB each fix one axis; \REMIX{}
-selects its position on both axes---and the pooling partition
-itself---by chronological validation.
+forecasting: cross-series pooling and temporal forgetting $(1-w)$. The
+pooling structure and its empirical-Bayes shrinkage jointly determine the
+horizontal position; it is not a parameter that is grid-searched
+directly. Classical TSB and stationary hierarchical EB each fix one axis;
+\REMIX{} selects a candidate configuration on both axes---including the
+pooling partition---by chronological validation.
 \textbf{(b)} All estimation consumes per-item sufficient statistics; the
 forgetting and pooling candidates are scored jointly, the winning
 configuration $(g,w)$ is refit on the full training window, and every
@@ -112,51 +120,52 @@ step preserves closed-form, deterministic, $O(N)$ inference.}
 Concretely, we build on a hierarchical empirical-Bayes (EB) formulation of
 TSB's occurrence--size decomposition (Beta--Binomial occurrence,
 log-normal sizes) in which every estimate is a closed-form function of
-per-item sufficient statistics. This structure admits two generic,
-composable operators. A \emph{forgetting operator} replaces each
-sufficient statistic by its exponentially discounted analogue, giving
-every posterior---and every hyperparameter fit---a power-prior
-interpretation and a temporal-adaptation capability, at zero additional
-cost. A \emph{pooling operator} replaces the hard-coded item partition
-with candidates that include mixture components learned by a deterministic
-EM procedure whose E- and M-steps reuse the model's own marginals.
-\REMIX{} selects the partition and the discount jointly by validation on
-the most recent fraction of the training window.
+per-item sufficient statistics. On that representation we make two
+compatible modifications. \emph{Recency discounting} replaces each
+sufficient statistic by its exponentially weighted analogue, giving every
+posterior---and every hyperparameter fit---a power-prior reading and a
+temporal-adaptation capability without changing the asymptotic cost of a
+single fit. \emph{Candidate pooling structures} replace the hard-coded
+item partition with a small set that includes mixture components learned
+by a deterministic EM procedure whose E- and M-steps reuse the model's own
+marginals. \REMIX{} scores the resulting candidate configurations
+$(g,w)$ on the most recent fraction of the training window and refits the
+winner; total cost is linear in the number of series for a fixed
+candidate set.
 
 \paragraph{Contributions.}
-\textbf{(1)} A single scalable model that subsumes classical TSB
-\emph{exactly}: Proposition~\ref{prop:tsb-limit} shows the discounted
-posterior mean equals the TSB recursion under a self-consistent
-initialization, with geometric agreement otherwise---the 50-year-old
-heuristic is the noninformative-prior corner of the plane.
-\textbf{(2)} Theory for the selector and for the limits of what it can
-select. Finite-sample MSE bounds under occurrence drift give an
-$O(\delta^{2/3})$ tracking rate with $w^{*}\!\to\!1$ as drift vanishes
-(Proposition~\ref{prop:drift}); an oracle inequality bounds the cost of
-choosing on a validation split (Proposition~\ref{prop:oracle}); and a
-two-sided credibility bound (Proposition~\ref{prop:twosided}) closes the
-loop by showing that discounting simultaneously keeps the shared prior
-active and drives the group variance components toward a boundary at
-which item-level information is discarded. Its
-Corollary~\ref{cor:resolution} gives an explicit \emph{resolution limit}:
-the finer the partition and the harder the forgetting, the sooner the
-partition stops being identifiable---which is why the risk surface over
-partitions is flat, and why a regularized model degrades to the global
-pool instead of to group means.
-\textbf{(3)} A five-panel study that measures the two axes separately and
-reports which one pays: best mean scaled pinball on all five datasets,
-point metrics repaired by forgetting, 11\% sharper intervals near nominal
-coverage (with calibration enabled in both configurations),
-sub-millisecond base inference per item and single-digit milliseconds
-end-to-end including selection---and, on the pooling axis, a negative
-result established rather than assumed. Three independent repairs
-(sample splitting, credibility regularization of the variance components,
-shrinkage of the group means) are implemented and measured; none makes
-the learned partition win on aggregate metrics, which is exactly what
-Corollary~\ref{cor:resolution} predicts. We also show that the standard
-point metrics are themselves degenerate here---a constant-zero forecast
-attains the lowest MAE on three of five panels---which is why the
-probabilistic comparison carries the argument.
+\textbf{(1) Method.} A discounted hierarchical empirical-Bayes forecaster
+in which the recency discount and the pooling structure are candidate
+coordinates rather than fixed choices, selected together by chronological
+validation. Inference stays closed form, deterministic, and linear in the
+number of series. Neither pooling nor discounting is new on its own; what
+we contribute is applying the same recency weighting to the sufficient
+statistics used for \emph{both} the item-level posterior update and the
+empirical-Bayes hyperparameter fit, and treating the pair $(g,w)$ as
+something to select rather than to assume.
+\textbf{(2) Theory.} Classical TSB is a boundary case of the family:
+Proposition~\ref{prop:tsb-limit} shows the discounted posterior mean
+equals the TSB recursion exactly under a self-consistent initialization,
+with $O(w^{T})$ discrepancy otherwise. Under forgetting the pooled prior
+never loses weight (Proposition~\ref{prop:active}), and finite-sample MSE
+bounds under occurrence drift give an $O(\delta^{2/3})$ tracking rate with
+$w^{*}\!\to\!1$ as drift vanishes (Proposition~\ref{prop:drift}). Our new
+result is the other side of that coin: Proposition~\ref{prop:twosided}
+and Corollary~\ref{cor:resolution} give a \emph{practical estimability
+condition}---the same reduction in effective sample size that keeps the
+prior active also limits how finely a pooling partition can be resolved
+from the window by this estimator. Classical credibility
+(Proposition~\ref{prop:credibility}) and a finite-class selection
+guarantee (Appendix~\ref{app:proofs}) are supporting results, not new.
+\textbf{(3) Empirics.} Across five public panels we measure the two axes
+separately. Forgetting drives the first-order gains. Differences among
+pooling partitions are small on aggregate metrics and survive three
+targeted repairs, which we report as a measured negative result rather
+than an assumption; a controlled synthetic study separates the possible
+explanations. Probabilistic performance is strong---best mean scaled
+pinball among non-degenerate methods on all five panels---while point
+performance is competitive but not uniformly best, and we show that the
+standard point metrics are themselves degenerate here.
 
 % =========================================================================
 \section{Related Work}\label{sec:related}
@@ -175,27 +184,32 @@ are the very quantities \REMIX{} learns.
 industrial scale via approximate Bayesian inference; \citet{pitkin2024}
 develops hierarchical hurdle models for retail; iETS
 \citep{svetunkov2023iets} gives a likelihood-based state-space treatment.
-These models pool but do not forget, and their pooling structures are
-fixed a priori. \REMIX{} keeps their statistical strengths with
-closed-form EB updates and adds both learned structure and forgetting.
+Many intermittent-demand hierarchical formulations use a pre-specified
+temporal evolution or a stationary estimation window, and fix the pooling
+structure a priori; broader dynamic hierarchical models
+\citep{westharrison1997} do combine sharing with adaptation, but typically
+at the cost of heavier inference than a closed-form update. \REMIX{} keeps
+the closed-form EB update and makes both the temporal weighting and the
+pooling structure candidate choices.
 
 \textbf{Discounting, power priors, and credibility.} Exponential
 discounting of information is a classical device: discount factors are
 central to Bayesian dynamic linear models \citep{westharrison1997}, and
 raising a likelihood to a power to down-weight historical data is the
-power-prior construction of \citet{ibrahimchen2000}. Our forgetting
-operator transplants this device to a different location: the discount
-acts on the \emph{sufficient statistics that drive empirical-Bayes
-hyperparameter estimation}---so the group-level priors themselves, not
-only the item states, adapt---while everything stays closed form and the
-discount strength is selected, not set. Likewise, the credibility form
+power-prior construction of \citet{ibrahimchen2000}. The novelty here is not exponential
+discounting itself, but applying the same recency weighting to the
+sufficient statistics used for \emph{both} the item-level posterior update
+and the empirical-Bayes hyperparameter estimation---so the group-level
+priors adapt, not only the item states---while everything stays closed
+form and the discount strength is selected rather than set. Likewise, the credibility form
 $\lambda_i=n_i/(n_i+\phi_g)$ of our posteriors is precisely the actuarial
-credibility factor \citep{buhlmann1967}; we import that literature's
-risk guarantees (Proposition~\ref{prop:credibility}) rather than
-rederive them. On the pooling axis, the local-versus-global tradeoff for
+credibility factor \citep{buhlmann1967}. Proposition~\ref{prop:credibility}
+restates that classical theorem in our notation and is not claimed as a
+contribution; we invoke it because our new result
+(Proposition~\ref{prop:twosided}) concerns when its weight degenerates. On the pooling axis, the local-versus-global tradeoff for
 forecasting groups of series is analyzed by
 \citet{monteromanso2021}; \REMIX{} treats the pooling \emph{structure}
-as one of the learned quantities. Count models for intermittent
+as one of the candidate choices, and reports what that buys. Count models for intermittent
 inventories are developed by \citet{snyder2012}.
 
 \textbf{Evaluation and modern baselines.} High quantiles drive inventory
@@ -360,19 +374,24 @@ R(\hat c)\;\le\;\min_{c} R(c)\;+\;B\sqrt{\frac{2\log(2M/\eta)}{n}} .
 \]
 \end{proposition}
 
-The proof (Appendix~\ref{app:proofs}) is a Hoeffding bound with a union
-over the $M$ candidates; the content is in the calibration of the
-constants. On Online Retail the validation block contains
-$n\approx8\times10^4$ observations, so with $M=24$ the selection penalty
-is below $2\%$ of the score scale---which is precisely why the empirical
-``plane is flat near its optimum'' finding of
-Section~\ref{sec:selector} is expected rather than fortunate: the
-selector reliably avoids the bad corners of the plane, and among
-near-optimal corners its choice is statistically indifferent.
-Within-series temporal dependence makes validation scores of a given
-item correlated; the bound treats items (of which there are thousands)
-as the independent units, which we state as an assumption rather than
-prove from mixing conditions.
+This is the standard finite-class uniform-convergence argument
+(Appendix~\ref{app:proofs}), and we report it as a supporting result
+rather than a contribution. Two caveats govern how much it delivers.
+First, the independent units are \emph{items}, not observations:
+within-series temporal dependence makes an item's validation scores
+correlated, so we aggregate each item's validation loss into one number
+and take $n$ to be the number of validation items ($n=3649$ on Online
+Retail), not the ${\sim}8\times10^4$ observation-quantile pairs. Second,
+boundedness is not automatic---the per-series scaling divides by mean
+absolute demand---so $B$ must be read as a clipping level applied to the
+per-item loss. With $M=24$, $\eta=0.05$ and $n=3649$ the penalty is
+$0.061\,B$. Since the observed spread of mean SPL across pooling
+structures is about $0.004$, the bound is nowhere near tight enough to
+certify one partition over another. We take that as corroboration rather
+than as a defect: it is the same conclusion the ablation reaches
+empirically in Section~\ref{sec:ablation}, namely that partition-level
+differences on these panels are not statistically resolvable, while the
+bound does still rule out the selector settling on a badly worse corner.
 
 \begin{proposition}[Pooling reduces risk; classical credibility]
 \label{prop:credibility}
@@ -414,8 +433,11 @@ sampling variance.
 \label{prop:twosided}
 \textbf{(i)} For $w<1$,
 $\lambda_i\le\bigl[1+(1-w)\kappa_g\bigr]^{-1}<1$.
-\textbf{(ii)} $\mathbb{E}[S_g^2]=\tau_g^2+\bar s_g$ exactly (for
-unequal $n_i$), and under the Gaussian working model
+\textbf{(ii)} With $S_g^2$ the unweighted sample variance of the item
+means normalized by $1/(m_g-1)$, and $\bar s_g$ the unweighted mean of the
+$s_i$, $\mathbb{E}[S_g^2]=\tau_g^2+\bar s_g$ holds \emph{exactly} for
+independent items with heteroskedastic $s_i$---no balance assumption and
+no weighting correction is needed. Under the Gaussian working model
 \[
 \Pr\bigl[\hat\tau_g^2=0\bigr]\;\simeq\;
 \Phi\!\Bigl(-\sqrt{\tfrac{m_g-1}{2}}\,\rho_g\Bigr),
@@ -424,9 +446,15 @@ unequal $n_i$), and under the Gaussian working model
 \]
 Since $n_i\le(1-w)^{-1}$ we have $\bar s_g\ge(1-w)\sigma_g^2$ and hence
 $\rho_g\le\tau_g^2/[\tau_g^2+(1-w)\sigma_g^2]$: \emph{forgetting lowers
-the identifiability ratio}. On the event $\hat\tau_g^2=0$ the plug-in
-weight is $\lambda_i=0$ and the item's own history is discarded
-entirely.
+the resolution ratio}. On the event $\hat\tau_g^2=0$ the plug-in weight is
+$\lambda_i=0$ and the item's own history is discarded entirely.
+The population ratio $\rho_g$ is not observable; its signed sample
+analogue, which is what we report, is
+$\hat z_g=(S_g^2-\bar s_g)/\widehat{\mathrm{SE}}(S_g^2)$ with
+$\widehat{\mathrm{SE}}(S_g^2)=\sqrt{2/(m_g-1)}\,S_g^2$, so that
+$\hat z_g\le0$ is exactly the collapse event. We keep the two symbols
+distinct throughout: $\rho_g\in(0,1)$ is a population quantity,
+$\hat z_g\in(-\infty,\sqrt{(m_g-1)/2}\,]$ is a statistic.
 \textbf{(iii)} If the variance components are partially pooled,
 $\tilde\tau_g^2=\omega_g\hat\tau_g^2+(1-\omega_g)\hat\tau_0^2$ with
 $\omega_g<1$ and $\hat\tau_0^2>0$, then
@@ -437,18 +465,28 @@ $\omega_g<1$ and $\hat\tau_0^2>0$, then
 \]
 \end{proposition}
 
-\begin{corollary}[Resolution limit of a learned partition]
+\begin{corollary}[Variance-component resolution condition]
 \label{cor:resolution}
-A group is estimable at discount $w$ only where
-$\rho_g\sqrt{m_g-1}\gtrsim1$, equivalently
+Under this estimator and window, a group's variance component is
+reliably estimable only where $\rho_g\sqrt{m_g-1}\gtrsim1$, equivalently
 $\tau_g^2\gtrsim\bar s_g/(\sqrt{m_g-1}-1)$ with
 $\bar s_g\ge(1-w)\sigma_g^2$. Refining a partition lowers $\tau_g^2$
 (members are alike by construction) and $m_g$ (fewer members per group),
-while forgetting raises the floor on $\bar s_g$; all three push the
-group toward the collapse event. Past that limit the regularized
-estimate returns $\tilde\tau_g^2\to\hat\tau_0^2$, so an over-fine
-partition degrades to the \emph{global pool} rather than to group means.
+while forgetting raises the floor on $\bar s_g$; all three move the group
+toward the collapse event. Past that point the regularized estimate
+returns $\tilde\tau_g^2\to\hat\tau_0^2$, so an over-fine partition
+degrades to the \emph{global pool} rather than to group means.
 \end{corollary}
+
+\emph{What this says and does not say.} It is an estimator- and
+window-specific statement about \emph{estimability}: with these
+sufficient statistics, this moment/REML estimator, and this much
+discounted data, finer structure cannot be resolved reliably. It is
+\emph{not} an information-theoretic impossibility result---we prove no
+lower bound over all estimators---and it says nothing about which
+partition is best \emph{below} the threshold. Section~\ref{sec:synthetic}
+tests it directly on data with known ground truth, where the true
+partition is available as a control.
 
 Parts (i) and (iii) together place $\lambda_i$ strictly inside $(0,1)$:
 under forgetting plus partial pooling of the variance components,
@@ -459,9 +497,9 @@ rest of the paper. First, the collapse is \emph{driven by the
 interaction} of the two axes rather than by either alone: forgetting
 supplies the small effective sample, a learned partition supplies the
 small within-group spread. Second,
-Corollary~\ref{cor:resolution} predicts a ceiling on partition
-refinement that no amount of estimation effort removes---the information
-is not in the window. Third, it explains why the risk surface over
+Corollary~\ref{cor:resolution} predicts a ceiling on partition refinement
+for the present estimator: the available window cannot reliably support
+finer structure, whatever tuning is applied to this estimator. Third, it explains why the risk surface over
 partitions is flat near its optimum: candidates beyond the resolution
 limit are automatically neutralized toward the global pool, so
 Proposition~\ref{prop:oracle}'s selector is choosing among configurations
@@ -496,7 +534,7 @@ intermittent suite of
 (3{,}000 series, $T{=}18$, $h{=}6$), \textbf{Carparts} (2{,}509, $T{=}45$,
 $h{=}6$), \textbf{RAF} (5{,}000, $T{=}72$, $h{=}12$).
 \textbf{Baselines.} Croston, SBA, TSB, ADIDA, IMAPA, AutoARIMA, AutoTheta
-(StatsForecast); per-series autoregressive Tweedie GLM; split-conformal
+(StatsForecast); per-series autoregressive Tweedie GLM (\emph{not} the GP-based method of \citealt{damato2025}); split-conformal
 wrappers (CP-$\ast$) of the point methods for probabilistic comparison;
 iETS \citep{svetunkov2023iets}; neural comparisons in
 Appendix~\ref{app:extra}.
@@ -597,7 +635,7 @@ CP-SBA & 1.4618 & 2.7806 & 1.8035 & 2.2589 & 0.3256 & 0.3153 & 0.3982 & 0.5418 &
 CP-TSB & 1.1709 & 2.6418 & 1.9930 & \best{2.1521} & 0.3459 & 0.3150 & 0.3783 & \secondbest{0.4842} & 0.3814 & 0.4986\\
 CP-ADIDA & 1.1251 & 2.5118 & 1.8011 & 2.2626 & 0.3275 & 0.3082 & 0.3571 & 0.4982 & \secondbest{0.3097} & 0.4905\\
 CP-IMAPA & 1.1292 & 2.5212 & \secondbest{1.7945} & \secondbest{2.2304} & 0.3279 & 0.3084 & \secondbest{0.3561} & 0.4908 & 0.3116 & 0.4907\\
-Tweedie & 1.1477 & 1.7458 & 3.8859 & 5.0919 & 0.3221 & 0.2783 & 0.4776 & 0.6897 & 0.3121 & 0.5312\\
+Tweedie-GLM & 1.1477 & 1.7458 & 3.8859 & 5.0919 & 0.3221 & 0.2783 & 0.4776 & 0.6897 & 0.3121 & 0.5312\\
 iETS & 1.0878 & 1.9332 & 2.4291 & 3.4758 & 0.3448 & 0.3252 & 0.4561 & 0.5646 & 0.3494 & \secondbest{0.4900}\\
 \midrule
 Zero & 0.9224 & 1.6604 & 1.9590 & 3.5262 & 0.5612 & 1.0102 & 0.3736 & 0.6725 & 0.2669$^{\dagger}$ & 0.4805$^{\dagger}$\\
@@ -627,15 +665,24 @@ MAE) it sits within 8\% of the leader, whereas every classical method
 has at least one panel where it trails badly (TSB's Auto MAE is 10\%
 off; AutoTheta's Online Retail MAE is 49\% off). On the short monthly panels the
 differences among leading methods are small; the decision-relevant
-comparison is probabilistic \citep{kolassa2016}. \textbf{Probabilistic:} \REMIX{} attains the best mean SPL on
-\emph{all five} panels---by 13\% over the runner-up on Online Retail, 5\%
-on M5, and 7--14\% on the monthly suite---and the best q90 on Online
-Retail, Auto, and RAF. Figure~\ref{fig:profile} shows the mechanism on
-the retail panel: conformal wrappers are competitive near the median but
-collapse at upper quantiles, while the zero-inflated log-normal EB law
-keeps sharp, calibrated tails (on M5, CP wrappers remain strong at q90
-specifically; \REMIX{}'s lead there is the full distribution). iETS and
-Tweedie trail \REMIX{} at every reported cell. The raw law over-covers
+comparison is probabilistic \citep{kolassa2016}. \textbf{Probabilistic:} \REMIX{} attains the best mean SPL among
+non-degenerate methods on all five panels---by 13\% over the runner-up on
+Online Retail, 5\% on M5, and 7--14\% on the monthly suite---and the best
+q90 on Online Retail, Auto, and RAF. The qualifier matters on RAF, where
+the all-zero forecast attains a marginally lower mean SPL than every
+method: at that sparsity the quantile levels we report are largely
+saturated, and separating methods there needs far-tail or cost-based
+evaluation (Section~\ref{sec:limitations}). Figure~\ref{fig:profile}
+shows the mechanism on the retail panel: conformal wrappers are
+competitive near the median but degrade sharply at upper quantiles under
+the present split-conformal construction, while the zero-inflated
+log-normal EB law keeps sharp, calibrated tails (on M5, CP wrappers
+remain strong at q90 specifically; \REMIX{}'s lead there is the full
+distribution). We test one static split-conformal variant; adaptive,
+rolling, and weighted conformal constructions are designed for exactly
+the nonstationarity at issue here and are not evaluated, so this is a
+statement about our wrapper, not about conformal prediction. iETS and
+Tweedie-GLM trail \REMIX{} at every reported cell. The raw law over-covers
 mildly on Online Retail (Coverage@80 $=0.896$, AIW $10.34$;
 Table~\ref{tab:coverage}). With the optional calibration layer switched
 on \emph{in both configurations being compared}, the forgetting
@@ -648,7 +695,11 @@ the all-zero and naive-last forecasts deliberately, because on
 intermittent data they calibrate what the metrics can and cannot see.
 The Zero forecast attains the lowest MAE on three of five panels (e.g.,
 $4.75$ on Online Retail, below every real method): absolute error is
-minimized by predicting the majority class, which is zero. This is the
+minimized by predicting the conditional median, which on these panels is
+zero. The reading we draw is about the metric, not about any method that
+scores well on it---MAE on highly intermittent panels rewards
+conservative zero-leaning forecasts and should be interpreted jointly
+with scaled-error and distributional metrics. This is the
 quantitative footnote to every MAE column in Table~\ref{tab:point}---in
 particular, TSB's three MAE wins should be read in light of the fact
 that an even more zero-leaning forecast wins those columns
@@ -685,8 +736,7 @@ Comp. & Weight & Occ.\ prior mean & $\phi_k$ & Median size\\
 \end{tabular}
 \end{table}
 
-Three consistent behaviors emerge across panels, and we state the third
-with the bluntness it deserves. \textbf{(i) The plane is flat near its
+Three consistent behaviors emerge across panels. \textbf{(i) The plane is flat near its
 optimum, exactly as Proposition~\ref{prop:oracle} predicts.} Re-running
 the selector with validation ratios $\{0.1,0.2,0.3\}$ on Online Retail
 selects (global, $0.95$), (mixture, $0.98$), and (mixture, $0.95$)
@@ -700,8 +750,8 @@ avoid the bad corners, not to locate a knife-edge optimum.
 (Figure~\ref{fig:curves}): near-stationary RAF selects $w{=}0.997$ while
 drifting Carparts and M5 select $w{=}0.90$, the qualitative signature of
 Corollary~\ref{cor:rate}. \textbf{(iii) The selector consistently picks
-the learned partition ($K\in\{4,5,6\}$ on all five panels)---and this
-particular choice is largely inconsequential.} On Online Retail the
+the learned partition ($K\in\{4,5,6\}$ on all five panels), but
+partition-level differences are small on aggregate metrics.} On Online Retail the
 ablation of Section~\ref{sec:ablation} shows all three partitions within
 $0.7\%$ of one another on every metric, point and probabilistic alike;
 the five-panel grid (Appendix~\ref{app:extra}) repeats the pattern with
@@ -824,6 +874,84 @@ its MAE with the heaviest RMSE of any configuration in the table:
 hierarchical pooling suppresses exactly the loss tail where TSB is
 weakest.
 
+\subsection{A controlled test of the resolution condition}\label{sec:synthetic}
+
+The panel results say that partition-level differences are small; they
+cannot say \emph{why}, because on real data the true partition is
+unknown. We therefore simulate hierarchical hurdle panels in which it is
+known: $K{=}4$ groups separated on both blocks the mixture models (mean
+log size and occurrence rate), item means drawn around each group mean
+with variance $\tau^2{=}0.15$, log-normal sizes, and a linear occurrence
+drift so that forgetting has something to track. We vary the group
+separation, the number of items per group, and the discount, with five
+replicates per cell, and compare five estimators: no pooling (per-item
+empirical hurdle), a single pool, the \emph{oracle} partition (true
+labels), the learned partition, and the learned partition with the
+variance components regularized. Reporting paired differences within
+replicate removes the simulation noise that would otherwise swamp the
+comparison.
+
+Three findings, all with $n{=}10$ paired replicates per cell.
+
+\textbf{(a) Pooling is worth a great deal.} A single pool beats no
+pooling in every cell, and by more as the panel becomes more
+heterogeneous: mean MAE advantage $0.010$--$0.042$ at separation $0.25$
+rising to $2.06$--$8.13$ at separation $2.0$. This is
+Proposition~\ref{prop:credibility} operating as expected, and it is the
+part of ``pooling'' our negative result does \emph{not} touch.
+
+\textbf{(b) The mixture recovers structure when structure is there.}
+Adjusted Rand index against the true labels rises from $0.26$--$0.31$
+(selected $K\approx2$) at separation $0.25$ to $0.95$--$0.96$ (selected
+$K=4$, the truth) at separation $2.0$, and is essentially unaffected by
+the discount. So a failure to pay off is not a failure to find the
+partition.
+
+\textbf{(c) Even the oracle partition does not pay.} Against the single
+pool, the \emph{true} partition loses in almost every cell, and loses
+more as separation grows and as forgetting strengthens: at separation
+$2.0$ the mean paired MAE difference is $-2.01\pm0.11$ at $w{=}1$ and
+$-7.68\pm2.57$ at $w{=}0.90$. The mechanism is the one
+Proposition~\ref{prop:twosided} describes. A single pool over
+heterogeneous items has a large $\tau^2$, hence $\kappa=\sigma^2/\tau^2$
+small and $\lambda_i$ near one: items keep their own histories and the
+prior mostly supplies a floor. Splitting into groups makes each group
+internally homogeneous, which is precisely what drives $\tau_g^2$ down,
+$\kappa_g$ up and $\lambda_i$ toward zero---items are replaced by their
+group mean. When items have ample data of their own, that trade is a
+loss, and forgetting makes it worse by shrinking the effective count on
+the numerator of $\lambda_i$. Regularizing the variance components
+removes the boundary collapse but does not reverse the trade
+($-0.06$ to $-3.51$ mean paired difference, in the same direction).
+
+Read against the three explanations of Section~\ref{sec:ablation}, this
+is a clean verdict: not a recovery failure (b), not a plug-in failure
+(the regularized arm behaves like the unregularized one), but a genuine
+absence of usable information at these effective sample sizes---which is
+what Corollary~\ref{cor:resolution} predicts and what the real panels
+show. Figure~\ref{fig:resolution} summarizes the grid, and its middle
+panel is the direct check of the collapse-probability approximation:
+over $480$ configurations the median absolute error between the
+simulated and predicted $\Pr[\hat\tau_g^2=0]$ is $0.0006$ and the
+$90$th percentile is $0.040$. The approximation is accurate except for
+small groups that combine strongly unequal counts with strongly unequal
+sampling variances, where it \emph{understates} the collapse probability
+by up to $0.21$ ($m_g{=}10$, $\tau^2/\sigma^2{=}0.05$, $w{=}0.90$);
+in that regime the condition should be read as optimistic.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/fig_resolution.pdf}
+\caption{Controlled resolution experiment. \textbf{(A)} MAE advantage of
+the learned partition over a single pool as forgetting strengthens; it
+is negative throughout and falls with $1-w$. \textbf{(B)} Simulated
+collapse probability against the resolution statistic
+$z=\rho_g\sqrt{(m_g-1)/2}$, with the predicted $\Phi(-z)$ overlaid.
+\textbf{(C)} Learned-versus-global advantage over the
+(separation, discount) grid.}
+\label{fig:resolution}
+\end{figure}
+
 \subsection{Sequential (walk-forward) operation}\label{sec:walkforward}
 
 \begin{table}[t]
@@ -935,29 +1063,63 @@ nearly on target, while RAF's $0.922$ is the largest deviation
 dominate); Section~\ref{sec:limitations} discusses this over-coverage
 explicitly.
 
-\paragraph{Cross-dataset comparison.} Following standard practice we
-also test across datasets. Figure~\ref{fig:cd} ranks per-series scaled
-squared errors (the RMSSE numerator) over all $16{,}833$ rankable series
-from the five panels with a Friedman test and Nemenyi critical
-difference. The temporal-aggregation methods lead the \emph{typical}
-series narrowly---\REMIX{} is statistically indistinguishable from IMAPA
-and $0.09$ average-rank behind ADIDA at $\mathrm{CD}=0.08$---while TSB,
-the MAE champion of Table~\ref{tab:point}, ranks \emph{last}: rank
-statistics weight every series equally, and zero-leaning forecasts pay
-on the series that matter. Diebold--Mariano-style paired tests on the
-same per-series losses give \REMIX{} a significant win in $25$ of $35$
-dataset$\times$baseline comparisons and a significant loss in $2$
-(IMAPA on Carparts, ADIDA on RAF), matching the two panels where
-Table~\ref{tab:point} already showed it trailing.
+\paragraph{Cross-dataset comparison (descriptive).} Figure~\ref{fig:cd}
+ranks per-series scaled squared errors (the RMSSE numerator) over all
+$16{,}833$ rankable series from the five panels. We report it as a
+\emph{descriptive} summary, not as a hypothesis test, because the
+standard Friedman--Nemenyi protocol blocks on \emph{datasets} whereas we
+block on series: with five panels contributing between $2{,}509$ and
+$5{,}000$ series each, the pooled ranking is dominated by the larger
+panels and the blocks are not exchangeable. A per-dataset rank table is
+in Appendix~\ref{app:extra}, and the ordering there is the same. Read
+descriptively, the temporal-aggregation methods lead the \emph{typical}
+series narrowly---\REMIX{} sits within the critical-difference band of
+IMAPA and $0.09$ average-rank behind ADIDA at $\mathrm{CD}=0.08$---while
+TSB, the MAE champion of Table~\ref{tab:point}, ranks \emph{last}: rank
+statistics weight every series equally, and zero-leaning forecasts pay on
+the series that matter. Diebold--Mariano-style paired tests on the same
+per-series losses give \REMIX{} an advantage in $25$ of $35$
+dataset$\times$baseline comparisons and a disadvantage in $2$ (IMAPA on
+Carparts, ADIDA on RAF), matching the two panels where
+Table~\ref{tab:point} already showed it trailing. DM was designed for two
+competing forecasts of one series; applying it to per-series aggregate
+losses across a panel is a common but non-standard use, so we treat the
+counts as effect-size summaries rather than as a family of tests with
+controlled error.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.93\linewidth]{figs/cd_diagram.pdf}
 \caption{Average ranks of per-series scaled squared errors across all
-five panels with Nemenyi critical difference ($\alpha{=}0.05$). Lower is
-better.}
+five panels, with the Nemenyi critical difference drawn at
+$\alpha{=}0.05$ for scale. Lower is better. Descriptive: the blocks here
+are series, not datasets, so this is not a valid Friedman--Nemenyi test
+(Section~\ref{sec:significance}).}
 \label{fig:cd}
 \end{figure}
+
+\subsection{The criterion the selector is given}\label{sec:criterion}
+Nothing in the selector is tied to pinball loss; it scores whatever
+criterion it is handed on the same validation split. That makes the
+choice of criterion a deployment decision rather than a property of the
+model, and it has a measurable cost when the criterion and the reported
+metric disagree. On Online Retail, selecting by validation \emph{MAE}
+instead of scaled pinball picks (global pool, $w{=}0.90$) rather than
+(mixture, $w{=}0.98$), and that configuration attains out-of-sample MAE
+$5.5083$---better than every configuration in
+Table~\ref{tab:ablation} and every baseline in Table~\ref{tab:point},
+including TSB's $5.5736$. The pinball-selected configuration reaches
+$5.6639$. So the $1.6\%$ MAE gap to TSB reported in
+Section~\ref{sec:experiments} is a consequence of selecting on a
+distributional criterion, not a limit of the model family: a deployment
+that cares about MAE can have the better MAE by asking for it.
+
+We report this as a two-sided fact. It supports the design---the selector
+is objective-aware---and it also means our headline configuration is not
+the MAE-optimal member of its own family. A full cross-objective study
+(selecting under mean SPL, MAE, RMSSE, q90 pinball, and a newsvendor cost,
+then reporting the regret matrix across all five metrics and all five
+panels) is the natural completion and is not run here.
 
 \paragraph{Robustness of the selector.} Beyond the validation-ratio
 sweep of Section~\ref{sec:selector}, the conjugate variance prior
@@ -980,59 +1142,85 @@ bit-reproducible without seeds.
 % =========================================================================
 \section{Limitations}\label{sec:limitations}
 % =========================================================================
-Seven boundaries of the present study are worth stating explicitly.
+We group the boundaries of this study into four kinds.
+
+\paragraph{Model distribution and calibration.}
 \textbf{(1)}~The log-normal size law keeps every update closed form but
 its tail can be conservative on panels with heavy-tailed spikes:
 Carparts' q90 favors AutoTheta and M5's q90 favors conformal wrappers
 even though \REMIX{} wins both means; a Gamma size block (conjugate in
 the same architecture) is the natural next instantiation.
-\textbf{(1b)}~Corollary~\ref{cor:resolution} is stated under the
-Gaussian working model for the item means and uses a $\chi^2$
-approximation for $S_g^2$; it should be read as a calibrated
-order-of-magnitude threshold, not an exact test. It also says nothing
-about \emph{which} partition is best below the resolution
-limit---only that partitions above it cannot be estimated. Whether a
-partition learned under an objective other than marginal likelihood
-(for instance one that maximizes between-group separation subject to
-$\rho_g\sqrt{m_g}$ staying above the threshold) would escape the limit
-is open, and is the experiment we would run next.
 \textbf{(2)}~Raw intervals over-cover on the sparsest panels (up to
 $0.922$ against nominal $0.80$ on RAF, Table~\ref{tab:coverage}), and on
-RAF the quantile evaluation itself saturates: the all-zero forecast
-attains marginally lower mean SPL than every method, so $q\le0.9$
-scores there discriminate weakly and far-tail or cost-based evaluation
-is needed. \textbf{(3)}~The mixture assignment is hard; a
+RAF the quantile evaluation saturates: the all-zero forecast attains a
+marginally lower mean SPL than every method, so the levels we report
+discriminate weakly there. Separating methods on that panel needs
+far-tail levels ($q\ge0.95$), CRPS, or a cost-based criterion, none of
+which we run here.
+
+\paragraph{Assumptions behind the resolution condition.}
+\textbf{(3)}~Corollary~\ref{cor:resolution} is stated under the Gaussian
+working model for the item means and uses a $\chi^2$ approximation for
+$S_g^2$; Section~\ref{sec:synthetic} shows the approximation is accurate
+except for small groups that combine strongly unequal counts with
+strongly unequal sampling variances, where it \emph{under}-states the
+collapse probability by up to $0.21$. Read it as a calibrated
+order-of-magnitude threshold, not an exact test. It is an
+estimator-specific estimability statement, not an information-theoretic
+impossibility result, and it says nothing about which partition is best
+\emph{below} the threshold. Whether a partition learned under a
+different objective---for instance one maximizing between-group
+separation subject to keeping $\rho_g\sqrt{m_g}$ above threshold---would
+do better is open, and is the experiment we would run next.
+\textbf{(4)}~The mixture assignment is hard; a
 soft-responsibility predictive mixture is a strict generalization that
 would add one matrix multiply. It is also the one extension not covered
 by our negative result: mixing over components changes the \emph{shape}
 of the predictive distribution rather than only the prior it shrinks
 toward, so it is not bounded by Corollary~\ref{cor:resolution} in the
 same way, and it targets the upper quantiles where
-Table~\ref{tab:prob} shows our remaining weakness. \textbf{(4)}~Hyperparameter uncertainty
-enters only through bootstrap averaging of the EB fit, not full
-posterior propagation. \textbf{(5)}~The selection criterion is a single
-pinball-based score; aligning it with the deployment loss is trivial to
-implement---on Online Retail, selecting by validation MAE instead picks
-(global pool, $w{=}0.90$), whose out-of-sample MAE of $5.508$ beats
-every configuration in Table~\ref{tab:ablation} and every
-baseline---and a systematic study of criterion alignment is left to
-future work. \textbf{(6)}~We do not compare directly against external
+Table~\ref{tab:prob} shows our remaining weakness. \textbf{(5)}~Hyperparameter uncertainty
+enters only through bootstrap averaging of the EB fit, not full posterior
+propagation.
+
+\paragraph{Baseline and inference scope.}
+\textbf{(6)}~We do not compare directly against external
 hierarchical Bayesian implementations
 \citep{chapados2014,seeger2016,pitkin2024}: they require sampling or
 variational machinery whose faithful reproduction at our scale was out
 of budget, so our hierarchical comparisons are internal (the $w{=}1$
 column of the ablation) plus iETS as the likelihood-based state-space
 representative; claims about those methods are limited to their
-published computational profiles. \textbf{(7)}~The Deep Renewal Process
-comparison could not be re-executed in the current environment
-(unmaintained MXNet dependency) and is reported as indicative only.
+published computational profiles; in particular we have not run a
+dynamic hierarchical hurdle or discount-factor Bayesian model, so we do
+not characterize that family empirically. \textbf{(7)}~Our Tweedie
+baseline is a per-series autoregressive GLM. The GP-based Tweedie method
+of \citet{damato2025}, whose Auto/Carparts/RAF protocol we adopt, is
+\emph{not} run here---its per-series GP training was outside our compute
+budget---so we make no claim about its accuracy relative to ours.
+\textbf{(8)}~The conformal comparison uses one static split-conformal
+construction; adaptive and weighted variants designed for nonstationarity
+are not evaluated. \textbf{(9)}~The Deep Renewal Process comparison could
+not be re-executed in the current environment (unmaintained MXNet
+dependency) and is reported as indicative only.
+
+\paragraph{Criterion and deployment alignment.}
+\textbf{(10)}~The selection criterion is a single pinball-based score.
+Section~\ref{sec:criterion} shows the selector tracks whichever criterion
+it is given, but a full cross-objective study---including an inventory
+cost criterion---is left to future work.
+\textbf{(11)}~The discount is selected under the fixed-origin protocol
+and reused in walk-forward. We keep the initialization discount and the
+online block update distinct and do not compound them, but we do not
+re-select the configuration online, so the walk-forward numbers should be
+read as the fixed-origin configuration operated sequentially.
 
 % =========================================================================
 \section{Conclusion}\label{sec:conclusion}
 % =========================================================================
 Pooling strength and forgetting speed are the two structural decisions of
 intermittent-demand forecasting, and neither needs to be hard-coded.
-\REMIX{} selects both---plus the pooling partition itself---inside a
+\REMIX{} selects a candidate configuration---pooling structure and recency discount---inside a
 closed-form empirical-Bayes pipeline whose noninformative corner is
 exactly classical TSB. The theory (exact recovery, always-active
 shrinkage, $\delta^{2/3}$ tracking) predicts the selector's empirical
