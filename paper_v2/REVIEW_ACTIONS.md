@@ -173,15 +173,19 @@ hyper_tau_rmse 由 w=1.00 的 0.0366（T=120）／0.0737（T=30）
 
 | 項 | 內容 | 狀態 |
 |---|---|---|
-| D1 | tuned TSB（同一 chronological split） | **PARTIAL（程式完成，實跑進行中）** |
+| D1 | tuned TSB（同一 chronological split） | **DONE（2026-08-01，五面板入 tab:point；見 WRITING_NOTES_v3.md §3 P0-1）** |
 | D2 | 不可宣稱勝過未跑過的 TweedieGP | **DONE** |
 | D3 | hierarchical dynamic baseline | **BLOCKED → Limitations 已明說** |
 | D4 | conformal 不可以偏概全 | **DONE** |
 
 - **D1**：`src/models/tsb_tuned.py` 完成——`tune_tsb_on_split()` 用**與 REMIX 相同的**
   `_split_init_head_tail`（同一 80/20 時序切分）、5×5=25 個 (α_d, α_p) 候選（與 REMIX 的 24 個同量級）、
-  以 scaled MAE 為準則（避免各自在自己主場評分）。OR 實跑進行中，數字尚未入文。
-  **入文前必須完成**，並同時報 fixed TSB / tuned-by-MAE / tuned-by-scaled 三列。
+  以 scaled MAE 為準則（避免各自在自己主場評分）。
+  **2026-08-01 完成五面板實跑並入文**（tab:point 加 TSB-tuned 列 + §main-results 討論段 +
+  兩處 Baselines 段落）。結果：OR (0.10,0.25) 5.6318/4.7985、M5 (0.20,0.01) 1.1932/2.3137、
+  Auto (0.20,0.10) 3.3917/1.1452、Carparts (0.50,0.45)=教科書值、RAF (0.50,0.25) 2.2447/1.6408。
+  「三列」簡化為 fixed + tuned-by-scaled 兩列（auto 上兩準則選同參數；tuned-by-raw-MAE 列
+  價值有限，未入文）。
 - **D2**：全文掃描確認**原本就沒有**「outperforms TweedieGP」之類宣稱；但 baseline 名稱
   `Tweedie` 易被誤讀，已全面改稱 **Tweedie-GLM**，正文加註「非 \citet{damato2025} 的 GP 方法」，
   Limitations 第 (7) 點明寫未跑、不作相對宣稱。

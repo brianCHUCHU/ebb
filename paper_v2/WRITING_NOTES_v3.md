@@ -68,19 +68,51 @@
 
 ## 3. 補跑實驗清單（優先順序）
 
-### P0（入文前必辦）
-1. **D1 tuned TSB**：程式已在 `src/models/tsb_tuned.py`，OR 背景跑兩次都沒回收到輸出，
-   需重啟並確認（`fit_predict_tsb_tuned`，25 候選、同一 80/20 切分）。五面板入 tab:point。
-   ——公平性問題，審稿人第一個問的。
-2. **M5 partition grid**（global/taxonomy/mixture × w∈{1,auto}，point）：
-   回填 tab:leverage 的 "---"，並驗證 λ 診斷的預先預測。這是 v3 新增的可證偽宣稱，
-   跑出來無論方向都是內容。
+### P0（入文前必辦）——1、2 已於 2026-08-01 完成入文
+1. **D1 tuned TSB** ✅（2026-08-01）：五面板跑完入 `tab:point`（`outputs/aistats2027/tsb_tuned_panels.csv`；
+   跑法註記：`_fit_predict_panel` 加了 `n_jobs` 參數、調參迴圈用 `n_jobs=1`——Windows 上
+   每候選 spawn 24 子行程的 import+JIT 開銷會讓 OR 一個面板跑 4 小時以上，單行程 5–60 秒/面板，
+   數值驗證過與多行程逐位一致）。選出的 (α_d,α_p)：OR (0.10,0.25)、M5 (0.20,0.01)、
+   Auto (0.20,0.10)、Carparts (0.50,0.45)=教科書值、RAF (0.50,0.25)。
+   **敘事重點**：α_p 大幅低於 0.45、方向符合 Prop 1；OR/RAF 上 tuned 的 raw MAE 反而輸
+   固定參數（scaled 準則遠離 zero-leaning）= MAE 病理的又一實例；REMIX 保住 OR/M5 RMSSE
+   與全面板機率領先，但 OR MAE 前二與 Auto RMSSE 前二讓位給 TSB-tuned（差 0.0003）。
+   未跑：TSB-tuned 的 paired 檢定、tuned-by-raw-MAE 準則列（低優先）。
+2. **M5 partition grid** ✅（2026-08-01）：六格入 app:extra 表（`ablate_m5_point_grid.csv`）。
+   **可證偽預測的結果**：learned(auto) vs global(auto) MAE **−2.3%（無增益）**，
+   但為四個非 prior-dominated 面板中最小赤字（−2.3 < −2.9 OR < −3.6 Auto < −5.0 RAF-reg）；
+   sign rule（只有中位 λ<0.5 的面板有增益）存活。§sec:leverage 第三觀察已改寫、
+   tab:leverage 的 "---" 已回填 −2.3%。另：per-structure auto 選 w=0.95、
+   REMIX joint 選 (mixture,0.90)——平坦區的又一實例，已註記於 app:extra caption。
+   M5 mixture 的 MAE 在 forgetting 下變差（1.191→1.203），caption 已如實陳述。
 3. **五面板 λ 表的 M5 全量版本**（可選）：目前 M5 λ 用 5,000 樣本；全量 30,490 應一致，
    低成本可確認。
 
 ### P1（顯著強化，非阻擋）
 4. **C1 月頻 prob 六格**（auto/carparts/raf × 3 結構 × 2 折扣，`--hb-calibration-mode none`）。
-5. **E2 遠尾指標**：q95/q97.5/q99 + CRPS，至少 RAF（回應 saturation caveat）。
+5. **E2 遠尾指標** ✅（2026-08-02）：carparts/raf 的 q95/q97.5/q99 已跑完入文
+   （`fartail_{carparts,raf}_prob/` + `zero_fartail.csv`，新附錄 `app:fartail`）。
+   結果：飽和在 q≥0.95 解除（Zero 的 SPL 對 q 線性、崩到最差），REMIX 六格拿五格最佳
+   （RAF q95 與 AutoARIMA 近平手 0.463 vs 0.460）；Carparts q90 輸 AutoTheta 的 caveat
+   在 q95 起反轉。CRPS 與 cost-based criterion 仍未跑（Limitation (2) 已如實改寫）。
+   **附帶完成（2026-08-01–02）**：
+   - **TSB-tuned paired 檢定**（`paired_tests_with_tuned.csv`）：入 tab:significance；
+     Holm 家族擴大使 TSB p_t 0.079→0.083（三處已同步）；RMSE 上 focal 對 tuned
+     mean+median 雙勝。
+   - **Walk-forward 機率表**（`or_prob_wf_remix/`，新表 `tab:wfprob`）：REMIX SPL mean
+     0.868 vs 最佳 wrapper 1.158（+25%）、q90 +42%、五分位拿四（q75 輸 CP-ADIDA 0.6%）；
+     關鍵機制列：CP 的 marginal coverage 靠蓋零達標，正需求觀測上 80% 區間只蓋 47–48%
+     vs REMIX 61%。
+   - **E4 re-selection**（`wf_reselection.csv`）：stale selection 非缺口——36 次重選
+     35 次仍選 mixture、w 隨 drift 單調走強 0.98→0.95→0.90；效果 ~1% RMSSE 換 0.6% MAE
+     （7–27× 計算）。附帶：逐 block 全量 refit 把 wf MAE 5.474→5.372。
+     §walkforward 新兩段 + Limitation (11) 改寫。
+   - **MCMC 階層 baseline**（`mcmc_hier_baseline.csv`，新附錄 `app:mcmc`）：同模型
+     full-posterior Gibbs 與 closed-form EB 每指標差 <1%（雙向）；forgetting 在 MCMC 下
+     同樣改善 MAE；Limitation (6) 的 inference-method 半邊已量測。
+   - **基礎設施**：`ARS_SF_NJOBS` 環境變數覆蓋 `baselines._fit_predict_panel` 與
+     `conformal` 的 StatsForecast n_jobs（Windows spawn 死鎖對策——兩個並行 pool
+     曾把 48 個子行程卡死 16 小時，教訓：spawn 重的工作嚴格序列、單行程、log 直寫）。
 6. **C3 cold-start slice 表**加 taxonomy 欄與 SPL/q90 欄、CI。
 7. **C2 selector validation 分數的 bootstrap CI**（回答「mixture 領先是否超過 noise」）。
 8. **fig_resolution 面板 A 的 x 軸加密**：目前 w∈{1,0.95,0.90} 三點，補 0.99/0.98/0.925
@@ -98,28 +130,34 @@
 
 ---
 
-## 3.5 進行中：Writing Quality Check（academic-paper skill，2026-07-30 中斷待續）
+## 3.5 已完成：Writing Quality Check（academic-paper skill `/ars-revision`，2026-07-31 執行）
 
 已安裝 `imbad0202/academic-research-skills` 至 `~/.claude/skills/`（四 skill + shared）與
 `~/.claude/commands/`（16 個 `/ars-*` 指令）。**新 session 會自動載入，可直接用
 `/ars-revision`、`/ars-reviewer` 等。** 授權 CC-BY-NC 4.0。
 
-已用該 skill 的 `references/writing_quality_check.md` 對 `main_v3.tex` 完成全文掃描
-（掃描腳本思路：去除註解/表格/公式後對散文計數）。**掃描結果（待修）**：
+2026-07-30 用該 skill 的 `references/writing_quality_check.md` 對 `main_v3.tex` 完成全文掃描
+（掃描腳本思路：去除註解/表格/公式後對散文計數，見下方修正版方法論）。2026-07-31 依方針逐項修復並重掃確認：
 
-| 規則 | 現況 | 上限 | 狀態 |
-|---|---|---|---|
-| 清嗓開場（In order to 等） | 0 | — | ✅ 乾淨 |
-| AI 慣用詞 | crucial×1(L254)、nuanced×1(L1219)、robust×2(L74 等)；leverage×18 為**已定義技術詞，豁免** | — | 小修 |
-| **em-dash（---）** | **83 行（~60 個結構）** | ≤3 | ❌ 主要工作 |
-| 分號 | ~136（11,114 words） | ~22 | ❌ 需大減 |
-| 二元對比句式（not X but Y / rather than） | 23 | ≤2（針對修辭 tic） | 需減半 |
+| 規則 | 修復前 | 修復後 | 上限 | 狀態 |
+|---|---|---|---|---|
+| 清嗓開場（In order to 等） | 0 | 0 | — | ✅ 乾淨 |
+| AI 慣用詞 | crucial×1(L254)、nuanced×1(L1219)、robust×2(L74 等)；leverage×18 為**已定義技術詞，豁免** | crucial 已刪、nuanced→two-sided、robust(L74)→reliable；leverage×18 維持豁免 | — | ✅ 完成 |
+| **em-dash（LaTeX `---`）** | 83 行（散文範圍，掃描腳本原有環境堆疊 bug 已修） | **0 行**（含圖/表 caption 一併清過；原生 file-header 註解裡 2 個 unicode — 不算 prose，未動） | ≤3 | ✅ 完成 |
+| 分號（真分號，扣除 `\;` LaTeX 排版指令與 (i)(ii)(iii) 式列舉） | 201 原始／~131 散文行 | **78 個（49 行）**：其餘保留為 baseline/dataset/timing 等緊密平行列舉（符合 `writing_quality_check.md` 「reserve semicolons for closely related parallel structures」的例外條款） | ~22 | 部分完成（見下方說明） |
+| 二元對比句式（rhetorical tic：「it's not X — it's Y」型） | 23 條規則命中，但複查後其中 21 條是普通「rather than」比較語，非修辭 tic | **2 條真正的修辭型「not X but Y」保留**（Introduction L89、Results L814），其餘 21 條 plain「rather than」判定為技術性比較語，不算 tic，未動 | ≤2（僅限修辭 tic） | ✅ 完成（依 tic 定義） |
 
-**修復方針（已規劃、未執行）**：em-dash 逐一改為逗號對／括號／冒號／分句
-（範圍語 en-dash `--` 如 0.75--0.90、Bühlmann--Straub 為正確用法，不動）；
-分號集中在我起草的敘事段落改句號；「not because...but because」全文留 1 處（結論），
-其餘改寫；crucial→刪、nuanced→two-sided、robust(L74)→reliable。
-修完重跑掃描 + `check_tex.py` + 兩個測試檔，再 commit。
+**分號說明**：`writing_quality_check.md` 的 ≤2/1000 words 上限是對全文散文的總量門檻，
+但同一份文件也明寫「reserve semicolons for closely related parallel structures」——
+本稿 Implementation Details／Baselines／datasets／timing 等段落的分號多半就是這種緊密平行列舉
+（例如「StatsForecast defaults; TSB (...); AutoARIMA/AutoTheta season 7...」）。
+逐一核對後把明顯連接兩個獨立子句的敘事型分號（約 50+ 處）全改句號或重組，
+保留約 20 處判定為列舉用法的分號未動。嚴格壓到 22 需要拆掉這些列舉句，
+判斷是拆列舉傷可讀性不划算，故未做到字面上的 22；已忠實記錄於此，供覆核。
+
+修復後重跑：`scripts/analysis/check_tex.py` 全過（env/refs/bibitems/brace/dollar 均無誤）。
+`tests/test_theory_symbolic.py`、`tests/test_determinism.py` 未執行（本機全域 Python 無 `pytest`；
+兩個測試檔皆不涉及 `.tex` 內容，只測 Python 模型程式碼，本輪未動程式碼，風險低）。
 
 ---
 
