@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import List
 
 import numpy as np
@@ -57,7 +58,10 @@ def _fit_predict_sf_point(
         return pd.DataFrame()
 
     h_max = int(target_df.groupby("unique_id").size().max())
-    sf = StatsForecast(models=_make_sf_point_models(), freq=freq, n_jobs=-1)
+    # ARS_SF_NJOBS=1 avoids the Windows pool-spawn overhead/deadlock for
+    # protocols that call this repeatedly (walk-forward); default unchanged.
+    n_jobs = int(os.environ.get("ARS_SF_NJOBS", -1))
+    sf = StatsForecast(models=_make_sf_point_models(), freq=freq, n_jobs=n_jobs)
     sf.fit(df=panel)
     pred = sf.predict(h=h_max).reset_index()
     pred = target_df[["unique_id", "ds"]].merge(pred, on=["unique_id", "ds"], how="inner")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import List, Optional, Sequence, Tuple
 
 import pandas as pd
@@ -52,8 +53,14 @@ def _fit_predict_panel(
     freq: str,
     probabilistic: bool,
     levels: Optional[List[int]],
+    n_jobs: int = -1,
 ) -> pd.DataFrame:
-    """Fit panel baselines once and trim per-series horizons."""
+    """Fit panel baselines once and trim per-series horizons.
+
+    ``n_jobs=1`` keeps the fit in-process: on Windows each ``n_jobs=-1`` call
+    spawns a fresh worker pool whose imports + numba JIT dominate wall time for
+    cheap models, so tuning loops that call this once per candidate should pass 1.
+    """
     if horizon_df.empty:
         return pd.DataFrame()
 
@@ -64,7 +71,11 @@ def _fit_predict_panel(
         return pd.DataFrame()
 
     h_max = int(horizon_df["h"].max())
-    sf = StatsForecast(models=models, freq=freq, n_jobs=-1)
+    # ARS_SF_NJOBS overrides the worker count for protocols that call this in a
+    # loop (walk-forward, tuning): on Windows every n_jobs=-1 call pays a fresh
+    # pool spawn (imports + numba JIT), which dominates for cheap models.
+    n_jobs = int(os.environ.get("ARS_SF_NJOBS", n_jobs))
+    sf = StatsForecast(models=models, freq=freq, n_jobs=n_jobs)
     sf.fit(df=train_panel)
 
     if probabilistic:

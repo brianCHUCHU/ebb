@@ -84,6 +84,7 @@ def tune_tsb_on_split(
                 freq=freq,
                 probabilistic=False,
                 levels=None,
+                n_jobs=1,
             )
             if pred.empty:
                 continue
@@ -118,6 +119,7 @@ def fit_predict_tsb_tuned(
         freq=freq,
         probabilistic=False,
         levels=None,
+        n_jobs=1,
     )
     if pred.empty:
         return pd.DataFrame(), {"alpha_d": a_d, "alpha_p": a_p}, diag
