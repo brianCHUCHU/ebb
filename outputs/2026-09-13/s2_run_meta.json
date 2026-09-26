@@ -1,0 +1,9 @@
+{
+  "task": "s2_real_separation",
+  "design": "docs/DESIGN_separation.md",
+  "r2": "1 - SS_within/SS_total of item mean log-size (discounted stats at w*) across the partition",
+  "wall_clock_total_s": 444.1,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

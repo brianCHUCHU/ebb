@@ -1,0 +1,8 @@
+{
+  "task": "w4_wf_latex_tables",
+  "input": "wf_all_panels_wide.csv",
+  "day": "2026-09-09",
+  "ranking": "best/second among non-degenerate rows; Zero excluded",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5"
+}

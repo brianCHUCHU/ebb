@@ -1,0 +1,17 @@
+{
+  "task": "h4_m5_wf_plan_c",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "seed": 42,
+  "protocol": "7-day blocks, 93 blocks, 5000 series",
+  "methods": "REMIX (mixture,0.95, online) + CP x5 (refit/block) + ACI-ADIDA (gamma 0.05) + Zero; AA/AT/iETS excluded (plan c)",
+  "component_walls_s": {
+    "REMIX": 36.6,
+    "CP5": 2324.1,
+    "ACI": 580.8
+  },
+  "wall_clock_total_s": 3315.8
+}

@@ -1,0 +1,16 @@
+{
+  "task": "w2_wf_roster_carparts_aci",
+  "panel": "carparts",
+  "n_series": 2509,
+  "blocks": 6,
+  "ebb_config": [
+    "global",
+    0.9
+  ],
+  "aci_gamma": 0.05,
+  "wall_clock_total_s": 7.7,
+  "failures": [],
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

@@ -1,0 +1,23 @@
+{
+  "task": "c1_coldstart_m5",
+  "panel": "m5",
+  "design": "docs/DESIGN_coldstart.md",
+  "levels": [
+    28,
+    56,
+    112,
+    224,
+    448,
+    "full"
+  ],
+  "ebb_config": [
+    "mixture",
+    0.95
+  ],
+  "scale": "naive scale from the FULL initialization window",
+  "failures": [],
+  "wall_clock_total_s": 27155.9,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

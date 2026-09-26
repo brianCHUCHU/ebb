@@ -1,0 +1,5 @@
+panel,n_series,blocks,init_s,predict_s,update_s,total_s
+online_retail,3649,36,1.17,1.2,20.07,22.44
+carparts,2509,6,0.7,0.13,2.57,3.41
+auto,3000,6,0.67,0.12,2.79,3.58
+raf,5000,12,3.42,0.28,9.82,13.52

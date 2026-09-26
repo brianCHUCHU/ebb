@@ -1,0 +1,15 @@
+{
+  "task": "w6_regret_and_wfcost",
+  "regret": "100*(mean SPL - best non-degenerate)/best per panel; Zero excluded from best",
+  "tweediegp_m5_projection_h": {
+    "refit_every_4_blocks": 50.8,
+    "refit_every_block": 196.8,
+    "basis": "7617.9 s full fit at 12 workers x ceil(93/4)=24 or 93 refits"
+  },
+  "ebb_timing": "initialize_online_tsb_hb + per-block predict_online_tsb_hb(2000 samples) + update_online_tsb_hb; single process",
+  "baseline_walls": "ARS_SF_NJOBS=1 single-process StatsForecast; TweedieGP 12 workers",
+  "wall_clock_total_s": 217.1,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

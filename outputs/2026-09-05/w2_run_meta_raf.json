@@ -1,0 +1,16 @@
+{
+  "task": "w2_wf_roster_raf",
+  "panel": "raf",
+  "n_series": 5000,
+  "blocks": 12,
+  "ebb_config": [
+    "mixture",
+    0.997
+  ],
+  "aci_gamma": 0.05,
+  "wall_clock_total_s": 21028.8,
+  "failures": [],
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

@@ -1,0 +1,6 @@
+protocol,model,quantile,pinball
+fixed,TSB-HB,0.1,0.11716999999999998
+fixed,TSB-HB,0.25,0.292925
+fixed,TSB-HB,0.5,0.58585
+fixed,TSB-HB,0.75,0.878775
+fixed,TSB-HB,0.9,1.0630253073463127

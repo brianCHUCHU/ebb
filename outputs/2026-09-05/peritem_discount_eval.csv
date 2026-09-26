@@ -1,0 +1,9 @@
+panel,variant,kappa,tail_score,spl_mean,spl_q90,w_median,w_share_below_star,tweediegp,selected
+carparts,scalar w*=0.9,,,0.3229,0.4817,0.9,,0.3214,
+carparts,per-item,inf,0.91345,0.3229,0.4817,0.9,0.0,0.3214,True
+carparts,per-item,300.0,0.91345,0.3229,0.4817,0.9,0.0,0.3214,False
+carparts,per-item,100.0,0.91345,0.3229,0.4817,0.9,0.0,0.3214,False
+carparts,per-item,30.0,0.91862,0.3231,0.4827,0.9,0.0,0.3214,False
+carparts,per-item,10.0,0.91657,0.3219,0.4767,0.9,0.0,0.3214,False
+carparts,per-item,3.0,0.91498,0.3216,0.4738,0.9,0.0,0.3214,False
+carparts,per-item,0.0,0.92121,0.3298,0.501,0.95,0.0,0.3214,False

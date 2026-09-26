@@ -1,0 +1,6 @@
+panel,structure,discount,mixture_k,wall_clock_s,expected_structure,matches_expected
+online_retail,global,0.95,6,83.6,taxonomy,False
+m5,mixture,0.95,6,258.7,mixture,True
+auto,global,0.99,5,71.9,global,True
+carparts,global,0.9,6,38.0,taxonomy,False
+raf,mixture,0.997,4,129.7,taxonomy,False

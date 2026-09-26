@@ -1,0 +1,12 @@
+{
+  "task": "w1_wf_tweediegp_online_retail",
+  "panel": "online_retail",
+  "blocks": 36,
+  "refit_every": 4,
+  "n_refits": 9,
+  "wall_clock_s": 6030.0,
+  "config": "released defaults; inducing T>200->200/log else all points; 12 workers",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

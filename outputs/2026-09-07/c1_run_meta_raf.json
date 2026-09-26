@@ -1,0 +1,22 @@
+{
+  "task": "c1_coldstart_raf",
+  "panel": "raf",
+  "design": "docs/DESIGN_coldstart.md",
+  "levels": [
+    6,
+    12,
+    24,
+    48,
+    "full"
+  ],
+  "ebb_config": [
+    "mixture",
+    0.997
+  ],
+  "scale": "naive scale from the FULL initialization window",
+  "failures": [],
+  "wall_clock_total_s": 6616.7,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

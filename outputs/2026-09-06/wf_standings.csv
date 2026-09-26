@@ -1,0 +1,6 @@
+panel,best,best_mean,second,second_mean,ebb_mean,strongest_rival,ebb_margin_pct,zero_mean
+online_retail,TweedieGP,0.8526,EBB,0.854,0.854,TweedieGP,-0.16,0.9161
+carparts,TweedieGP,0.3121,EBB,0.3145,0.3145,TweedieGP,-0.77,0.3736
+auto,EBB,0.291,TweedieGP,0.2924,0.291,TweedieGP,0.48,0.5612
+raf,EBB,0.2681,TweedieGP,0.2801,0.2681,TweedieGP,4.28,0.2669
+m5,ACI-ADIDA,1.4192,EBB,1.4851,1.4851,ACI-ADIDA,-4.64,1.959

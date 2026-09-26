@@ -243,3 +243,9 @@ lightning_logs/
 # Raw downloaded datasets (regenerate via src/tools/convert_intermittent_datasets.py)
 data/raw_new/
 external/
+
+# LaTeX build products inside manuscript folders (PDFs are kept)
+paper_v2/*/*.aux
+paper_v2/*/*.out
+paper_v2/*/main.txt
+paper_v2/*/compile*.log

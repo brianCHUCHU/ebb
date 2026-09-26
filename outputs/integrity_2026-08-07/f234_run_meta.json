@@ -1,0 +1,47 @@
+{
+  "task": "f234_driver",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "flags": "baseline-mode hb_only; prob adds calibration none + B=20",
+  "wall_clock_total_s": 2649.1,
+  "runs": [
+    {
+      "run": "or_prob_taxonomy_095",
+      "wall_clock_s": 218.6,
+      "cmd": "py -u -m experiments.run_prob --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\or_prob_taxonomy_095 --dataset online --hb-grouping taxonomy --hb-fit-discount 0.95 --hb-calibration-mode none --hb-bootstrap-draws 20"
+    },
+    {
+      "run": "or_prob_mixture_095",
+      "wall_clock_s": 399.8,
+      "cmd": "py -u -m experiments.run_prob --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\or_prob_mixture_095 --dataset online --hb-grouping mixture --hb-fit-discount 0.95 --hb-calibration-mode none --hb-bootstrap-draws 20"
+    },
+    {
+      "run": "or_point_taxonomy_095",
+      "wall_clock_s": 25.2,
+      "cmd": "py -u -m experiments.run_point --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\or_point_taxonomy_095 --dataset online_retail --hb-grouping taxonomy --hb-fit-discount 0.95"
+    },
+    {
+      "run": "or_point_mixture_095",
+      "wall_clock_s": 208.6,
+      "cmd": "py -u -m experiments.run_point --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\or_point_mixture_095 --dataset online_retail --hb-grouping mixture --hb-fit-discount 0.95"
+    },
+    {
+      "run": "auto_point_mixture_099",
+      "wall_clock_s": 158.8,
+      "cmd": "py -u -m experiments.run_point --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\auto_point_mixture_099 --dataset auto --hb-grouping mixture --hb-fit-discount 0.99"
+    },
+    {
+      "run": "m5_prob_seed43_mixture_095",
+      "wall_clock_s": 706.2,
+      "cmd": "py -u -m experiments.run_prob --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\m5_prob_seed43_mixture_095 --dataset m5 --seed 43 --init-ratio 0.6667 --hb-grouping mixture --hb-fit-discount 0.95 --hb-calibration-mode none --hb-bootstrap-draws 20"
+    },
+    {
+      "run": "m5_prob_seed44_mixture_095",
+      "wall_clock_s": 931.3,
+      "cmd": "py -u -m experiments.run_prob --baseline-mode hb_only --out C:\\Users\\Hummer\\Desktop\\tsb-hb-1\\outputs\\integrity_2026-08-07\\m5_prob_seed44_mixture_095 --dataset m5 --seed 44 --init-ratio 0.6667 --hb-grouping mixture --hb-fit-discount 0.95 --hb-calibration-mode none --hb-bootstrap-draws 20"
+    }
+  ]
+}

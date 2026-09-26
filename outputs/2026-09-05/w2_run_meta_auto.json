@@ -1,0 +1,16 @@
+{
+  "task": "w2_wf_roster_auto",
+  "panel": "auto",
+  "n_series": 3000,
+  "blocks": 6,
+  "ebb_config": [
+    "global",
+    0.99
+  ],
+  "aci_gamma": 0.05,
+  "wall_clock_total_s": 1772.3,
+  "failures": [],
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

@@ -1,0 +1,11 @@
+dataset,protocol,model,metric,quantile,value,refit_interval
+online_retail,walk_forward,TweedieGP,scaled_pinball,0.1,0.18322087375440957,4
+online_retail,walk_forward,TweedieGP,scaled_pinball,0.25,0.45788616546028355,4
+online_retail,walk_forward,TweedieGP,scaled_pinball,0.5,0.9169244991265015,4
+online_retail,walk_forward,TweedieGP,scaled_pinball,0.75,1.3256497052755294,4
+online_retail,walk_forward,TweedieGP,scaled_pinball,0.9,1.3791427731505952,4
+online_retail,walk_forward,TweedieGP,scaled_pinball,mean,0.8525648033534639,4
+online_retail,walk_forward,TweedieGP,coverage80,,0.9241597450597656,4
+online_retail,walk_forward,TweedieGP,coverage80_positive,,0.708717157264655,4
+online_retail,walk_forward,TweedieGP,aiw80,,13.031803862502015,4
+online_retail,walk_forward,TweedieGP,wall_clock_s,,6030.015818899963,4

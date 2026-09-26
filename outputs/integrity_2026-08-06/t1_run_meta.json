@@ -1,0 +1,68 @@
+{
+  "task": "t1_leakage_safe_selection",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "seed": {
+    "m5_sample": 42
+  },
+  "val_ratio": 0.2,
+  "quantiles": [
+    0.5,
+    0.75,
+    0.9
+  ],
+  "item_variance_mode": "conjugate",
+  "item_variance_shrink_strength": 20.0,
+  "label_builder_scope": "selection fitting head only (leakage-safe)",
+  "wall_clock_total_s": 582.0,
+  "per_panel": [
+    {
+      "panel": "online_retail",
+      "structure": "global",
+      "discount": 0.95,
+      "mixture_k": 6,
+      "wall_clock_s": 83.6,
+      "expected_structure": "taxonomy",
+      "matches_expected": false
+    },
+    {
+      "panel": "m5",
+      "structure": "mixture",
+      "discount": 0.95,
+      "mixture_k": 6,
+      "wall_clock_s": 258.7,
+      "expected_structure": "mixture",
+      "matches_expected": true
+    },
+    {
+      "panel": "auto",
+      "structure": "global",
+      "discount": 0.99,
+      "mixture_k": 5,
+      "wall_clock_s": 71.9,
+      "expected_structure": "global",
+      "matches_expected": true
+    },
+    {
+      "panel": "carparts",
+      "structure": "global",
+      "discount": 0.9,
+      "mixture_k": 6,
+      "wall_clock_s": 38.0,
+      "expected_structure": "taxonomy",
+      "matches_expected": false
+    },
+    {
+      "panel": "raf",
+      "structure": "mixture",
+      "discount": 0.997,
+      "mixture_k": 4,
+      "wall_clock_s": 129.7,
+      "expected_structure": "taxonomy",
+      "matches_expected": false
+    }
+  ]
+}

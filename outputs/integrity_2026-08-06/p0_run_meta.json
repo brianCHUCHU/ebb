@@ -1,0 +1,12 @@
+{
+  "task": "p0_remix_external_corrected",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "seed": 42,
+  "flags": "baseline-mode hb_only, hb-calibration-mode none, hb-bootstrap-draws 20 (per paper_v2/REVIEW_ACTIONS.md template)",
+  "wall_clock_total_s": 0.2,
+  "runs": "executed in prior invocation; per-run wall-clocks in outputs/logs/integrity_p0.log"
+}

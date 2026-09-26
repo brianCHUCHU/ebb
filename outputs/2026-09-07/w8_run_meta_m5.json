@@ -1,0 +1,58 @@
+{
+  "task": "w8_wf_aci_ebb_m5",
+  "panel": "m5",
+  "n_series": 5000,
+  "blocks": 93,
+  "step": 7,
+  "ebb_config": [
+    "mixture",
+    0.95
+  ],
+  "gamma": 0.05,
+  "level_clip": [
+    0.001,
+    0.999
+  ],
+  "level_grid_size": 203,
+  "final_alpha_summary": {
+    "a_0.1": {
+      "mean": 0.0271,
+      "50%": 0.001,
+      "min": 0.001,
+      "max": 0.999
+    },
+    "a_0.25": {
+      "mean": 0.0861,
+      "50%": 0.001,
+      "min": 0.001,
+      "max": 0.999
+    },
+    "a_0.5": {
+      "mean": 0.2533,
+      "50%": 0.051,
+      "min": 0.001,
+      "max": 0.999
+    },
+    "a_0.75": {
+      "mean": 0.5453,
+      "50%": 0.699,
+      "min": 0.001,
+      "max": 0.999
+    },
+    "a_0.9": {
+      "mean": 0.8226,
+      "50%": 0.899,
+      "min": 0.001,
+      "max": 0.999
+    }
+  },
+  "walls_s": {
+    "predict": 80.9,
+    "aci": 54.4,
+    "update": 82.0
+  },
+  "wall_clock_total_s": 719.5,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

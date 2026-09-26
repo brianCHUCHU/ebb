@@ -1,6 +1,6 @@
 # REMIX — AISTATS 2027 投稿改稿 TODO List
 
-> 對象：Claude Code（在論文 repo 內執行）
+> 對象：執行端（在論文 repo 內執行）
 > 目標稿件：`main.tex`（"Learning to Pool and to Forget"）
 > 本清單基於對現有 `main.tex` 的逐項稽核，所有引用的數字都可在 tex 中直接驗證。
 
@@ -35,7 +35,7 @@
 - [ ] **錯誤 1**：實際數 Table `tab:point` 的 REMIX 列，`\best`/`\secondbest` 共 **7 個**，不是 8。
   （OR: RMSSE best、MAE 2nd；M5: 兩欄 best；Auto: MAE best、RMSSE 2nd；RAF: RMSSE 2nd；**Carparts 兩欄皆未進前二、RAF MAE 未進前二**。）
 - [ ] **錯誤 2**：TSB 在同表中被 `\best` **三次**（OR MAE `5.574`、Carparts MAE `0.540`、RAF MAE `2.166`）。因此「no baseline is best on more than two columns」為假，「each panel crowns a different classical leader」亦為假。
-- [ ] 參考正確計數（請 Claude Code 自行重數一次確認）：best 次數 = REMIX 4、TSB 3、SBA 1、ADIDA 1、AutoTheta 1，合計 10。
+- [ ] 參考正確計數（請執行端自行重數一次確認）：best 次數 = REMIX 4、TSB 3、SBA 1、ADIDA 1、AutoTheta 1，合計 10。
 - [ ] 重寫該句。建議方向：不要打「橫掃欄位數」這種容易被反駁的牌，改打「唯一在五個面板上都不落入尾段、且機率性指標全勝」的一致性論述。
 - **驗收**：新句子中每一個計數都能由 `tab:point` 逐格數出來。
 
@@ -328,7 +328,7 @@
 
 ---
 
-## 交回作者裁決的問題（Claude Code 請填入 `QUESTIONS.md`）
+## 交回作者裁決的問題（執行端請填入 `QUESTIONS.md`）
 
 - Table 1 的 REMIX(OR) `5.664` 與 Table 4 的 `learned+auto` `5.692` 差異，是 fit window 不同，還是其中一個是舊版數字？
 - M5 只用 5,000 條是算力限制，還是有其他原因？

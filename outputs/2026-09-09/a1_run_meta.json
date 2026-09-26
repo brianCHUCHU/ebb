@@ -1,0 +1,8 @@
+{
+  "task": "a1_aci_selector",
+  "rule": "apply ACI iff tail scaled pinball (q .5/.75/.9) of ACI-EBB < plain EBB on the 80/20 chronological split of the initialization window; head-only labels; same gamma/update as W8",
+  "wall_clock_total_s": 507.6,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

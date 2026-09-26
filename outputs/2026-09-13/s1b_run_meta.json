@@ -1,0 +1,34 @@
+{
+  "task": "s1b_separation_surface_v2",
+  "design": "docs/DESIGN_separation.md (addendum 2026-09-13)",
+  "seed": 20260913,
+  "grid": {
+    "separation": [
+      0.0,
+      0.25,
+      0.5,
+      1.0,
+      2.0,
+      3.0
+    ],
+    "discount": [
+      1.0,
+      0.95,
+      0.9
+    ],
+    "T": [
+      30,
+      120
+    ],
+    "reps": 9
+  },
+  "occurrence_spread": "0.8*min(sep,1)",
+  "remedy_arms": [
+    "learned+cred",
+    "learned+split (parity)",
+    "learned+split+cred"
+  ],
+  "wall_clock_total_s": 5512.1,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5"
+}

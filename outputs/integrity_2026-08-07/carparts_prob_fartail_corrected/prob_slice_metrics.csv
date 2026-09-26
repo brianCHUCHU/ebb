@@ -1,0 +1,13 @@
+protocol,slice_type,slice,model,n_obs,n_series,Coverage@50,AIW@50,Coverage@80,AIW@80,CoverageGap@50,CoverageGap@80,pinball_mean,GoalScore@80,n_obs_pos,Coverage@50_pos,AIW@50_pos,Coverage@80_pos,AIW@80_pos,CoverageGap@50_pos,CoverageGap@80_pos,pinball_mean_pos,GoalScore@80_pos
+fixed,regime,Smooth,TSB-HB,24,4,,,,,,,0.2137746561063969,,6,,,,,,,0.34481530939859667,
+fixed,regime,Erratic,TSB-HB,6,1,,,,,,,0.1886303412509419,,2,,,,,,,0.11771204736233105,
+fixed,regime,Intermittent,TSB-HB,12558,2093,,,,,,,0.15476554462404085,,2470,,,,,,,0.5002088747787918,
+fixed,regime,Lumpy,TSB-HB,2430,405,,,,,,,0.20829941556939482,,588,,,,,,,0.5782165658019741,
+fixed,regime,NoPositiveInit,TSB-HB,36,6,,,,,,,0.7740231498702427,,15,,,,,,,1.8239060197182015,
+fixed,sparse,NonSparse(Smooth|Erratic),TSB-HB,66,11,,,,,,,0.5170788968089077,,23,,,,,,,1.2896915759517071,
+fixed,sparse,Sparse(Intermittent|Lumpy),TSB-HB,14988,2498,,,,,,,0.1634449752616983,,3058,,,,,,,0.5152083915615359,
+fixed,cold_start,CS_0_1,TSB-HB,300,50,,,,,,,0.22076642224236276,,46,,,,,,,1.289080140537019,
+fixed,cold_start,CS_2_3,TSB-HB,2166,361,,,,,,,0.10006433013823897,,168,,,,,,,0.8170376835824765,
+fixed,cold_start,CS_4_5,TSB-HB,2202,367,,,,,,,0.13710471530903948,,222,,,,,,,0.9285493079298502,
+fixed,cold_start,CS_6_10,TSB-HB,3456,576,,,,,,,0.18578805325779593,,640,,,,,,,0.7059793467762449,
+fixed,cold_start,CS_11_plus,TSB-HB,6930,1155,,,,,,,0.18136841781964505,,2005,,,,,,,0.3743867441587449,

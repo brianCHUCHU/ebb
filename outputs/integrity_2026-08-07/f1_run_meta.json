@@ -1,0 +1,31 @@
+{
+  "task": "f1_wf_remix_corrected",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "seed": 42,
+  "mechanics": "initialize_online_tsb_hb -> predict block -> update block; identical to scripts/rebuild/t2_wf_carparts.py REMIX path",
+  "wall_clock_total_s": 57.2,
+  "panels": [
+    {
+      "panel": "online_retail",
+      "config": [
+        "global",
+        0.95
+      ],
+      "blocks": 36,
+      "wall_clock_s": 51.1
+    },
+    {
+      "panel": "carparts",
+      "config": [
+        "global",
+        0.9
+      ],
+      "blocks": 6,
+      "wall_clock_s": 5.7
+    }
+  ]
+}

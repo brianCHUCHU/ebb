@@ -1,0 +1,32 @@
+{
+  "task": "t1b_m5_seed_selection",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "seeds": [
+    43,
+    44
+  ],
+  "protocol": "init 2/3, val_ratio 0.2, head-only labels, existing scoring",
+  "wall_clock_total_s": 591.9,
+  "per_seed": [
+    {
+      "panel": "m5",
+      "seed": 43,
+      "structure": "mixture",
+      "discount": 0.95,
+      "mixture_k": 6,
+      "wall_clock_s": 245.9
+    },
+    {
+      "panel": "m5",
+      "seed": 44,
+      "structure": "mixture",
+      "discount": 0.95,
+      "mixture_k": 6,
+      "wall_clock_s": 303.1
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "task": "w1_wf_tweediegp_raf",
+  "panel": "raf",
+  "blocks": 12,
+  "refit_every": 1,
+  "n_refits": 12,
+  "wall_clock_s": 8483.9,
+  "config": "released defaults; inducing T>200->200/log else all points; 12 workers",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

@@ -1,0 +1,14 @@
+{
+  "task": "h2_tweediegp_full_online_retail",
+  "panel": "online_retail",
+  "n_series": 3649,
+  "n_zero_fallback": 0,
+  "n_failed_after_3_attempts": 0,
+  "wall_clock_total_s": 1730.1,
+  "per_series_wall_median_s": 5.09,
+  "workers": 12,
+  "seed": 42,
+  "config": "released defaults (train_longer active); inducing: T>200 -> 200/'log', else all points; period 365",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.11.15"
+}

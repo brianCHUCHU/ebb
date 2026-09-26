@@ -1,0 +1,21 @@
+{
+  "task": "c1_coldstart_carparts",
+  "panel": "carparts",
+  "design": "docs/DESIGN_coldstart.md",
+  "levels": [
+    6,
+    12,
+    24,
+    "full"
+  ],
+  "ebb_config": [
+    "global",
+    0.9
+  ],
+  "scale": "naive scale from the FULL initialization window",
+  "failures": [],
+  "wall_clock_total_s": 1075.3,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

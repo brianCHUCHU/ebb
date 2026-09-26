@@ -1,0 +1,19 @@
+{
+  "task": "r2_room_eval",
+  "design": "docs/DESIGN_room_diagnostic.md",
+  "source": "outputs\\2026-09-15\\room_synthetic.csv",
+  "n_panels": 1654,
+  "features": [
+    "lev_size",
+    "het_size",
+    "z_size",
+    "lev_occ",
+    "het_occ",
+    "z_occ",
+    "median_n_pos",
+    "median_n_obs",
+    "m_items"
+  ],
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5"
+}

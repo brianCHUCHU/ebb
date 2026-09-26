@@ -1,0 +1,27 @@
+
+\paragraph{A pre-fit screen.}
+The surface answers the question ex post, with true labels; the
+practical question is ex ante. On an expanded controlled grid
+(separation, discount, length, occurrence rate, group size, imbalance;
+$2{,}700$ panels), a closed-form score computed from the single-pool fit
+alone, $\mathrm{med}_i(1-\lambda_i^{(+)})^2\,\hat\tau^2$, ranks the room a
+true partition could earn with held-out AUC 0.71--0.71 for
+the event ``gain above one percent''; a logistic screen on the same
+fitting-window quantities reaches 0.84--0.83 when separation
+levels, lengths, or random folds are held out and 0.68 when a
+whole discount is held out, so the screen interpolates across regimes it
+has seen and does not extrapolate across the discount
+(Appendix~\ref{app:room}). Two facts bound the claim. 39\% of the
+simulated single-pool fits collapse ($\hat\tau^2=0$) and half of the
+large oracle gains occur there: escapes from a collapsed global fit,
+which the resolution statistic flags, not returns to structure. And on
+real series with a known partition injected---group offsets of up to two
+log-units on Online Retail, Carparts, and M5, at the selected discount and
+at $w=0.90$---the oracle partition never earns more than 0.4\%,
+because a single pool absorbs the injected heterogeneity into
+$\hat\tau^2$ and the items' own evidence takes over; the screen assigns
+every such panel a probability below 0.17 of material room,
+correctly, but the test checks rejections, not detections. The screen
+therefore does what Corollary~\ref{cor:resolution} licenses and no more:
+it identifies, from the fitting window, regimes where refinement cannot
+pay materially.

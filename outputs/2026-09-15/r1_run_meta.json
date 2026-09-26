@@ -1,0 +1,42 @@
+{
+  "task": "r1_room_synthetic",
+  "design": "docs/DESIGN_room_diagnostic.md",
+  "seed": 20260915,
+  "grid": {
+    "separation": [
+      0.0,
+      0.25,
+      0.5,
+      1.0,
+      2.0
+    ],
+    "discount": [
+      1.0,
+      0.95,
+      0.9
+    ],
+    "T": [
+      30,
+      60,
+      120
+    ],
+    "occ_mean": [
+      0.1,
+      0.25,
+      0.5
+    ],
+    "items": [
+      20,
+      60
+    ],
+    "balance": [
+      "balanced",
+      "skewed"
+    ]
+  },
+  "reps": 5,
+  "n_rows": 2700,
+  "wall_clock_total_s": 989.8,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5"
+}

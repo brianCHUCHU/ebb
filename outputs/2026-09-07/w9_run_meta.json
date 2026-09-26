@@ -1,0 +1,9 @@
+{
+  "task": "w9_wf_significance",
+  "families": "per (panel, reference); Holm; significant = both adjusted p<0.05",
+  "notes": [],
+  "wall_clock_total_s": 245.6,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

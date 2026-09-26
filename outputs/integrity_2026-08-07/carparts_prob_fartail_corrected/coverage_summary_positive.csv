@@ -1,0 +1,2 @@
+protocol,model,n_obs_pos,Coverage@50_pos,AIW@50_pos,CoverageGap@50_pos,Coverage@80_pos,AIW@80_pos,CoverageGap@80_pos
+fixed,TSB-HB,3081,,,,,,

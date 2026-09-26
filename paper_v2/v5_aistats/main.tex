@@ -1,0 +1,1605 @@
+% =========================================================================
+% EBB — AISTATS 2026 template version (migrated from the arXiv layout).
+% Compile: pdflatex main.tex (x2).
+% =========================================================================
+\documentclass[twoside]{article}
+\usepackage{aistats2026}
+
+\usepackage{bold-extra}       % bold small caps for \EBB in bold headings
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[expansion=false]{microtype}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+
+\newcommand{\EBB}{\textsc{Ebb}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\ind}[1]{\mathbf{1}\{#1\}}
+\newcommand{\best}[1]{\textbf{#1}}
+\newcommand{\secondbest}[1]{\underline{#1}}
+
+\begin{document}
+
+\runningtitle{EBB: Pooling under Forgetting for Probabilistic Intermittent-Demand Forecasting}
+\runningauthor{Bai, Chu}
+
+\twocolumn[
+\aistatstitle{EBB: Pooling under Forgetting for Probabilistic\\
+Intermittent-Demand Forecasting}
+\aistatsauthor{ Zong-Han Bai \And Po-Yen Chu }
+\aistatsaddress{ } ]
+
+
+% =========================================================================
+% EBB v4 — Abstract / Introduction / Related Work
+% Drop-in replacements. Macros, labels, and \citep keys unchanged.
+% =========================================================================
+
+
+% =========================================================================
+% ABSTRACT  (replaces the existing abstract environment)
+% =========================================================================
+\begin{abstract}
+Intermittent-demand forecasters must decide how to pool evidence across
+items and how much history to retain. These choices are usually specified
+separately, although discounting changes both an item's reliance on a
+shared prior and the information available to estimate that prior. We
+introduce \EBB{}, a scalable hierarchical empirical-Bayes forecaster
+that applies one exponential recency operator to item- and group-level
+sufficient statistics and selects the discount jointly with the pooling
+partition by chronological validation. Forgetting has two opposing
+effects: it preserves prior leverage while reducing the effective sample
+available to resolve group heterogeneity. A two-sided credibility bound
+makes the trade-off explicit, and its resolution condition is estimable
+from the fitting window \emph{before} any partition is fitted. % [ORIG 2026-09-06]
+% ORIG| Across five
+% ORIG| public panels comprising more than 19{,}000 series, \EBB{} attains the
+% ORIG| % [2026-09-05 STALE] now two of five (Auto, RAF); TweedieGP ahead on OR/M5/Carparts
+% ORIG| lowest mean scaled pinball loss on four, with an official
+% ORIG| Tweedie--Gaussian-process specialist ahead on Carparts by half a percent
+% ORIG| ($0.3214$ versus $0.3229$); under strict
+% ORIG| % [2026-09-06 STALE] wf five panels: EBB best on Auto/RAF only; TweedieGP ahead on OR (0.8526 vs 0.8540) and Carparts (0.3121 vs 0.3145); ACI ahead on M5 (1.4192 vs 1.4851). +6.2% over ACI on OR still true; +9.9% on Carparts is now vs third-best (TweedieGP -0.8%).
+% ORIG| walk-forward updating it improves on adaptive conformal inference by
+% ORIG| $6.2\%$ on a long daily panel and on the strongest statistical comparator
+% ORIG| by $9.9\%$ on a short monthly one. 
+Across five
+public panels comprising more than 19{,}000 series, under both a
+% [ORIG 2026-09-07]
+% ORIG| fixed-origin and a strict walk-forward protocol, \EBB{} and an official
+% ORIG| Tweedie--Gaussian-process specialist are the only two methods within five
+% ORIG| percent of the best method on every panel. \EBB{} leads on Auto and RAF
+% ORIG| under both protocols; the specialist leads on the remaining panels by
+% ORIG| under one percent in four of its five leads and by $2.9\%$ on M5 at fixed
+% ORIG| origin, and it costs one to two orders of magnitude more and must be refit
+% ORIG| at every update, where \EBB{} updates sufficient statistics in closed
+% ORIG| form. Under walk-forward updating adaptive conformal inference leads on M5
+% ORIG| by $4.4\%$ and \EBB{} improves on it by $6.2\%$ and $8.0\%$ on the two
+% ORIG| panels where both are strongest. 
+fixed-origin and a strict walk-forward protocol, \EBB{} and an official
+Tweedie--Gaussian-process specialist are the only two methods within five
+percent of the best competing method on every panel. \EBB{} leads on Auto
+and RAF under both protocols; the specialist leads on the remaining panels
+by under one percent in four of its five leads and by $2.9\%$ on M5 at
+fixed origin, and it costs one to two orders of magnitude more and must be
+refit at every update, where \EBB{} updates sufficient statistics in
+closed form. Adding the same adaptive conformal layer to \EBB{} that the
+% [ORIG 2026-09-09]
+% ORIG| strongest conformal baseline uses makes it the walk-forward leader on M5
+% ORIG| and Auto and closes Carparts to $0.2\%$, while hurting on Online Retail and
+% ORIG| RAF; under equal calibration \EBB{} beats the ADIDA base on all five
+% ORIG| panels. 
+strongest conformal baseline uses makes it the walk-forward leader on M5
+and Auto and closes Carparts to $0.2\%$, while hurting on Online Retail and
+RAF; a validation-tail rule inside the initialization window decides where
+to apply it, is right on four of five panels, and leaves \EBB{} within
+0.8\% of the best competing method everywhere under walk-forward
+updating. The margins are modest, and the
+diagnostic explains what bounds them: the credibility weight an item
+retains after discounting caps how far any shared prior can move its
+posterior. % [ORIG 2026-09-13]
+% ORIG| That bound is not what binds in practice. On the panel with the
+% ORIG| most room---a median size-block weight of $0.553$, where a supplied true
+% ORIG| partition earns over two percent in controlled study---the learned
+% ORIG| partition returns $-0.05\%$. Across all five panels, refining the pooling
+% ORIG| structure improves external accuracy on none, and the internal gain
+% ORIG| exceeds selector noise on only one. The constraint is therefore not that
+% ORIG| cross-series structure is unavailable to exploit, but that current mixture
+% ORIG| objectives do not recover a partition worth shrinking toward; we give the
+% ORIG| diagnostic that separates the two cases and show that all five public
+% ORIG| panels fall on the second side.
+Placing each panel on a controlled surface that varies leverage
+and group separation together, the study assigns room to one panel:
+Carparts, where a supplied true partition earns $1.7$ to $2.0\%$ and the
+learned partition returns $-0.08\%$, a failure the same objective
+reproduces at the same coordinates in simulation. On the other four the
+surface predicts no room and none is found; across all five, refining the
+pooling structure improves external accuracy on none. The diagnostic thus
+separates panels without exploitable structure from the one panel where
+the structure exists and current mixture objectives do not recover it. Two evaluation artifacts recur throughout: absolute-error
+metrics reward the all-zero forecast on three panels, and the standard
+split-conformal wrapper understates the conformal baseline by roughly
+$20\%$ relative to its adaptive counterpart. The contribution is therefore
+a cheap, deterministic predictive law together with an ex ante test of
+whether cross-series pooling is worth attempting at all.
+\end{abstract}
+
+
+% =========================================================================
+% SECTION 1 — INTRODUCTION  (replaces \section{Introduction} in full)
+% =========================================================================
+\section{Introduction}\label{sec:intro}
+
+Intermittent demand, in which long runs of zeros are interrupted by
+sporadic positive quantities, is pervasive in spare-parts logistics,
+long-tail commerce, and supply chains. Forecasting many such series poses
+two coupled statistical choices. Evidence can be pooled across items to
+stabilize sparse estimates, but an overly coarse pool hides real
+heterogeneity. Old observations can be discounted to track drift and
+obsolescence, but forgetting also removes information. Local methods such
+as Croston, SBA, and TSB
+\citep{croston1972,syntetos2005accuracy,teunter2011} emphasize temporal
+adaptation while estimating each item separately. Hierarchical
+probabilistic models \citep{chapados2014,seeger2016,pitkin2024} emphasize
+cross-series shrinkage, usually under a fixed pooling structure or a
+pre-specified temporal model. Pooling and forgetting are consequently
+often designed as separate decisions.
+
+Figure~\ref{fig:problem} makes both choices concrete in real intermittent
+demand: the relevance of an item's own history changes over time, while
+the histories from which it might borrow strength are sharply
+heterogeneous.
+
+They are not separate statistically. With exponential forgetting, an
+item's effective history remains bounded, so a shared prior can retain
+substantial influence even after a long observation sequence. The same
+discounting, however, reduces the effective information used to estimate
+each group-level prior. Stronger forgetting can therefore make pooling
+more consequential while making fine pooling structure harder to resolve.
+This tension is the paper's organizing principle: the forgetting rate sets
+not only a temporal horizon, but also the statistical resolution at which
+cross-series structure can be learned.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{fig01_problem.png}
+\caption{The two coupled choices, in real intermittent demand.
+\textbf{(a)} One item's daily history: occurrence falls from $43.3\%$ to
+$13.3\%$ between the earlier and the recent ninety days, so a stationary
+weighting ($w=1$) and a recency weighting ($w=0.98$) summarize the same
+history differently---which past observations should count?
+\textbf{(b)} Four items from the same panel, spanning rare and frequent
+occurrence at small and large sizes: any pooled prior must decide which
+of these heterogeneous neighbors an item should borrow strength
+from---which other items should count? Candidate pools are a global
+pool, a supplied taxonomy, and data-driven similarity.}
+\label{fig:problem}
+\end{figure*}
+
+We operationalize this principle with
+\EBB{},\footnote{Empirical Bayes with Bounded memory: under the recency operator an
+item's effective history stays bounded (Section~\ref{sec:theory}),
+so evidence ebbs rather than accumulates.} a recency-weighted hierarchical
+empirical-Bayes forecaster for intermittent demand. The model uses an
+occurrence--size decomposition with Beta--Binomial occurrence and
+log-normal size blocks, represented by per-item sufficient statistics. The
+same exponential weights are applied to the statistics used for the item
+posterior and for group-level hyperparameter estimation. A small candidate
+family crosses discount factors with a global pool, the classical
+ADI/CV$^2$ taxonomy, and BIC-selected mixture partitions; chronological
+validation selects the pair before a full-window refit. For a fixed
+candidate family, estimation is deterministic and linear in the number of
+observations, with low-dimensional group optimization and mixture search.
+
+The theory predicts an asymmetric empirical pattern. Forgetting should be
+a first-order forecasting decision, whereas refining an already pooled
+model can help only when the discounted data still resolve the proposed
+groups. Because the resolution condition depends on quantities available
+from the fitting window, it can be checked panel by panel before any
+partition is fitted. The first half holds: all five panels select a
+discount below one, and on the panel where both effects are measurable
+forgetting is worth an order of magnitude more than refinement. The second
+half fails in a more informative way than we expected. Refining the
+pooling structure improves external accuracy on none of the five panels,
+% [ORIG 2026-09-13]
+% ORIG| and the diagnostic shows this is not because the panels lack room. Three
+% ORIG| of them retain substantial credibility leverage, and one---Online
+% ORIG| Retail---sits at exactly the level where a supplied true partition earns
+% ORIG| more than two percent in controlled study, while its learned partition
+% ORIG| returns $-0.05\%$. What binds is therefore not the resolution limit but
+% ORIG| learnability: the structure would pay if it were correct, and the mixture
+% ORIG| objective does not find it. Separating those two explanations is what the
+% ORIG| diagnostic is for, and it is the distinction between a resolution limit
+% ORIG| and an absence of useful cross-series structure.
+and a controlled surface over leverage and group separation says why.
+Four panels sit where a supplied true partition would earn nothing; one,
+Carparts, sits where it would earn $1.7$ to $2.0\%$, and its learned
+partition returns $-0.08\%$. The same mixture objective loses at those
+coordinates in simulation, so on the one panel with room what binds is
+learnability, and on the other four it is the absence of room. Separating
+those two explanations is what the diagnostic is for.
+
+The resulting empirical position is deliberately narrow. % [ORIG 2026-09-06]
+% ORIG| Across the five
+% ORIG| % [2026-09-05 STALE] now two of five (Auto, RAF); TweedieGP ahead on OR/M5/Carparts
+% ORIG| panels \EBB{} attains the lowest mean scaled pinball loss on four, with
+% ORIG| margins over the strongest comparator ranging from roughly one percent to
+% ORIG| ten; an official Tweedie--Gaussian-process implementation is
+% ORIG| better on Carparts and throughout that panel's far tail. Under strict
+% ORIG| % [2026-09-06 STALE] see tab:wfprob comment: TweedieGP leads OR/Carparts wf; ACI leads M5; EBB leads Auto (+0.5%) and RAF (+4.3%).
+% ORIG| walk-forward updating the margin is $6.2\%$ over adaptive conformal
+% ORIG| inference on Online Retail and $9.9\%$ over the strongest statistical
+% ORIG| comparator on Carparts, and it is concentrated in the upper quantiles:
+% ORIG| below the median, several methods on these panels coincide exactly with
+% ORIG| the all-zero forecast. 
+Across the five
+panels and both protocols, \EBB{} leads on Auto and RAF, and the official
+Tweedie--Gaussian-process implementation leads on the others by margins
+that are under one percent in four of five cases and $2.9\%$ on M5 at
+fixed origin; under walk-forward updating, adaptive conformal inference
+leads on M5 by $4.4\%$. Measured as the largest shortfall to the best
+method on any panel, \EBB{} ($2.9\%$ at fixed origin, $4.6\%$ under
+% [ORIG 2026-09-07]
+% ORIG| walk-forward updating) and the specialist ($3.1\%$, $4.5\%$) are alone
+% ORIG| within five percent everywhere, and every other method is more than
+% ORIG| $15\%$ behind on at least one panel. 
+walk-forward updating) and the specialist ($3.1\%$, $4.5\%$) are alone
+within five percent of the best competing method everywhere, and every
+other method is more than $15\%$ behind on at least one panel. The
+adaptive conformal layer that makes ADIDA competitive can be applied to
+\EBB{} as well: it takes M5 and Auto and closes Carparts to $0.2\%$, but
+% [ORIG 2026-09-09]
+% ORIG| degrades Online Retail and RAF, so we report it as a separate row rather
+% ORIG| than folding it into the method. 
+degrades Online Retail and RAF; a validation-tail rule inside the
+initialization window decides where to apply it and is right on four of
+five panels. The margins are concentrated in the
+upper quantiles: below the median, several methods on these panels
+coincide exactly with the all-zero forecast. We report this structure rather than an aggregate
+win because it is what the mechanism predicts, and because two widely used
+evaluation conventions actively obscure it.
+
+\paragraph{Contributions.}
+\textbf{(1) Joint adaptation.} We introduce a scalable empirical-Bayes
+model that applies one recency operator consistently to item- and
+group-level sufficient statistics, then selects the discount jointly with
+the pooling structure by leakage-free chronological validation. The
+resulting predictive law is closed form, bit-reproducible, costs
+milliseconds per series on a CPU, and updates online without refitting.
+\textbf{(2) An estimable resolution condition.} We show that discounting
+has two linked effects: it keeps prior leverage active but reduces the
+information with which group heterogeneity can be estimated. A two-sided
+credibility bound gives the collapse probability of the group variance
+component, and its resolution corollary converts that bound into a
+statistic computable from the fitting window. The statistic bounds how
+much any partition could be worth on a given panel before one is fitted,
+and separates a panel with no room from a panel whose room we fail to use.
+Connections to TSB, drift tracking, classical credibility, and
+finite-class selection are collected in the appendix.
+\textbf{(3) Mechanism-focused evidence, including a negative result.}
+Five real-data panels, five strict walk-forward evaluations, and a
+known-partition simulation separate gains from forgetting, gains from
+pooling refinement, and distortions caused by zero-favoring point metrics.
+Comparators include the official TweedieGP implementation, adaptive
+conformal inference applied to the baselines and to \EBB{} alike, a
+published hierarchical state-space model, and a zero-shot foundation
+model. % [ORIG 2026-09-13]
+% ORIG| Learned pooling improves external accuracy on
+% ORIG| none of the five panels, and we show this is not attributable to a lack of
+% ORIG| leverage: on the panel with the most room the learned partition still
+% ORIG| loses.
+Learned pooling improves external accuracy on
+none of the five panels; a controlled surface over leverage and group
+separation shows that four panels have no room and that on the fifth,
+Carparts, both the real objective and its simulated counterpart fail to
+collect it. The two obvious model-side remedies for the remaining shortfall to
+the specialist, heavier-tailed size laws and item-specific forgetting
+rates, do not close it either. We also document two evaluation failures that the
+intermittent-demand literature currently inherits---absolute-error metrics
+reward the all-zero forecast, and static split-conformal wrappers
+understate what conformal prediction can do here by about $20\%$.
+
+
+% =========================================================================
+% SECTION 2 — RELATED WORK  (replaces \section{Related Work} in full)
+% =========================================================================
+\section{Related Work}\label{sec:related}
+
+\textbf{Intermittent-demand forecasting.} Croston's decomposition
+\citep{croston1972}, its SBA correction \citep{syntetos2005accuracy}, and
+TSB \citep{teunter2011} estimate occurrence and positive size locally;
+TSB additionally lets the occurrence estimate decay under obsolescence.
+ADIDA \citep{nikolopoulos2011} and IMAPA \citep{kourentzes2016} instead
+reduce intermittency through temporal aggregation, while likelihood-based
+alternatives include inventory count models \citep{snyder2012}, iETS
+\citep{svetunkov2023iets}, Tweedie Gaussian processes \citep{damato2025},
+and deep renewal processes \citep{turkmen2019}. Conformal wrappers turn
+point forecasters into predictive intervals, and adaptive conformal
+inference updates miscoverage levels under distribution shift
+\citep{gibbs2021}; we evaluate both the static and the adaptive form,
+because the difference between them is larger than most method
+differences reported on these panels. These approaches provide important
+forms of temporal adaptation, but do not jointly learn how
+recency-weighted evidence should be shared across items. Hierarchical
+models do share evidence: \citet{chapados2014} and \citet{seeger2016}
+pool related count series at scale, and \citet{pitkin2024} develops a
+hierarchical hurdle model for retail. Their pooling structure or temporal
+evolution is generally specified in advance. \EBB{} instead crosses
+recency and pooling choices within one occurrence--size empirical-Bayes
+model, and asks when that crossing can pay.
+
+\textbf{Learning cross-series structure.} The continuum between local and
+global forecasting is formalized by \citet{monteromanso2021}. More recent
+work learns richer forms of cross-series specialization. For hierarchical
+forecasting, \citet{cini2024} learns a graph-pooled aggregation hierarchy
+aligned with the forecasting objective. Moirai-MoE \citep{liu2025moirai}
+replaces human-defined frequency groups with token-level sparse-expert
+routing in a time-series foundation model. These approaches motivate
+data-adaptive structure, but address different objects: aggregation
+coherence or latent expert specialization. Our groups are explicit
+exchangeability pools for a shared prior. That restriction is what makes
+their statistical resolution analyzable: the quantity governing whether a
+pool can be estimated is the same credibility weight that governs whether
+it can matter, so a single diagnostic covers both. It also permits a
+direct comparison among global, fixed-rule demand-pattern, and learned
+mixture pools under one predictive law.
+
+\textbf{Discounting, credibility, and selection.} Exponential discounting
+is classical in Bayesian dynamic models \citep{westharrison1997}, and
+power priors down-weight historical likelihoods \citep{ibrahimchen2000}.
+Likewise, $\lambda_i=n_i/(n_i+\phi_g)$ is the classical actuarial
+credibility form \citep{buhlmann1967}; Proposition~\ref{prop:credibility}
+is therefore a restatement, not a claimed contribution. The distinction in
+\EBB{} is that one recency operator updates both item statistics and the
+empirical-Bayes statistics defining the shared prior, and its strength is
+selected jointly with the pool. Proposition~\ref{prop:twosided} then
+identifies the resulting two-sided resolution limit: forgetting preserves
+prior leverage but can erase the information needed to distinguish fine
+pools. Chronological validation selects among the finite candidate family.
+Because zero-heavy point losses can favor degenerate forecasts, selection
+uses pinball loss, a proper scoring rule \citep{gneiting2007}, with the
+high quantiles relevant to inventory decisions \citep{kolassa2016}.
+
+% =========================================================================
+\section{\EBB{}: Recency-Weighted Hierarchical EB}\label{sec:method}
+% =========================================================================
+
+\EBB{} combines two candidate choices inside one occurrence--size
+model: a recency discount $w$ determines which observations remain
+informative, and a partition $g$ determines which items share an
+empirical-Bayes prior. The key construction is that the \emph{same}
+discounted sufficient statistics determine both the item posterior and
+the group prior. We first define that representation, then the candidate
+partitions and their leakage-safe joint selection.
+
+\subsection{Occurrence--size model}\label{sec:base}
+
+For item $i$, let $z_{i,t}=\ind{y_{i,t}>0}$ and define
+$\ell_{i,t}=\log y_{i,t}$ when $z_{i,t}=1$. Conditional on membership
+$g_i=g(i)$, the hurdle model is
+\begin{equation}
+\begin{aligned}
+\pi_i &\sim \mathrm{Beta}(\alpha_{g_i},\beta_{g_i}), &
+z_{i,t}\mid\pi_i &\sim \mathrm{Bern}(\pi_i),\\
+\mu_i &\sim \mathcal{N}(\mu_{0,g_i},\tau^2_{g_i}), &
+\sigma_i^2 &\sim \mathrm{ScaleInv}\text{-}\chi^2(\nu,s^2_{0,g_i}),\\
+\ell_{i,t} &\;\big|\; z_{i,t}{=}1,\mu_i,\sigma_i^2
+\sim \mathcal{N}(\mu_i,\sigma_i^2).\span\span
+\end{aligned}
+\label{eq:model}
+\end{equation}
+Here $s^2_{0,g}$ is parameterized so that the prior mean of
+$\sigma_i^2$ is the group estimate $\sigma_g^2$; $\nu$ is fixed rather
+than selected. Group hyperparameters are estimated by empirical Bayes:
+Beta--Binomial marginal likelihood for occurrence, and an
+intercept-only random-effects fit plus conjugate variance shrinkage for
+positive log-size. Appendix~\ref{app:implementation} gives the numerical
+objectives and fallback rules.
+
+Without forgetting, all inference depends on the four statistics
+\[
+S_i(1)=(n_i,c_i,u_i,v_i)
+=\sum_{t=1}^{T_i}
+  \bigl(1,z_{i,t},z_{i,t}\ell_{i,t},z_{i,t}\ell_{i,t}^2\bigr),
+\]
+where the last two terms are zero when $z_{i,t}=0$. The occurrence
+posterior mean and the positive-size posterior location take parallel
+credibility forms,
+\begin{align}
+\hat\pi_i
+&=\lambda_i^{(o)}\bar p_i+(1-\lambda_i^{(o)})\mu_{\pi,g_i},
+&\lambda_i^{(o)}&=\frac{n_i}{n_i+\phi_{g_i}},\nonumber\\
+\hat\mu_i
+&=\lambda_i^{(+)}\bar\ell_i+(1-\lambda_i^{(+)})\mu_{0,g_i},
+&\lambda_i^{(+)}&=\frac{n_i^+}{n_i^++\kappa_{i,g_i}},
+\label{eq:credibility-pair}
+\end{align}
+with $\phi_g=\alpha_g+\beta_g$ and
+$\kappa_{i,g}=\hat\sigma_i^2/\tau_g^2$. Thus a partition matters only
+through the prior target and strength supplied to its members.
+
+Two variance ratios appear in what follows. Estimation uses the item-level
+$\kappa_{i,g}=\hat\sigma_i^2/\tau_g^2$ in
+\eqref{eq:credibility-pair}; the analysis in
+Section~\ref{sec:resolution} works with the group-level surrogate
+$\kappa_g=\sigma_g^2/\tau_g^2$, which replaces each item's process
+variance by its group estimate. The two coincide when the group is
+homogeneous in $\sigma_i^2$, and the surrogate is what the collapse event
+of Proposition~\ref{prop:twosided} is stated in terms of.
+
+The plug-in marginal predictive distribution is zero-inflated
+log-normal:
+\begin{equation}
+\begin{aligned}
+\Pr(Y_i=0\mid\mathcal D)&=1-\hat\pi_i,\\
+\log Y_i\mid(Y_i>0,\mathcal D)
+&\sim\mathcal N(\hat\mu_i,\hat\sigma_i^2+V_i),
+\end{aligned}
+\label{eq:predictive-law}
+\end{equation}
+where $V_i$ is posterior uncertainty in $\mu_i$. Its quantiles are
+analytic. For point evaluation we retain the conditional plug-in mean
+$\hat y_i=\hat\pi_i\exp(\hat\mu_i+\hat\sigma_i^2/2)$; it is distinct
+from the mean of \eqref{eq:predictive-law}, which also integrates $V_i$.
+
+\subsection{Shared recency weighting}\label{sec:discount}
+
+For $w\in(0,1]$, replace $S_i(1)$ by
+\begin{equation}
+S_i(w)=\sum_{t=1}^{T_i}w^{T_i-t}
+  \bigl(1,z_{i,t},z_{i,t}\ell_{i,t},z_{i,t}\ell_{i,t}^2\bigr).
+\label{eq:discounted-stats}
+\end{equation}
+These fractional counts are valid weighted-likelihood statistics; the
+log-Gamma form of the occurrence marginal and the Normal size objective
+extend directly to them. Crucially, $S_i(w)$ is used twice:
+\begin{equation}
+\begin{aligned}
+\widehat\eta_g(w)
+&=\arg\max_{\eta_g}
+  \sum_{i:g_i=g}\log m\{S_i(w)\mid\eta_g\},\\
+q_i^{(w)}(\theta_i)
+&=q_i\!\left(\theta_i\mid
+  S_i(w),\widehat\eta_{g_i}(w)\right),
+\end{aligned}
+\label{eq:shared-recency}
+\end{equation}
+where $\eta_g$ collects the group hyperparameters and $q_i$ is the item
+posterior. The group prior therefore adapts to recent cross-sectional
+evidence rather than remaining a stationary prior applied to discounted
+item data. Setting $w=1$ recovers the stationary estimator exactly.
+
+For occurrence, \eqref{eq:credibility-pair} becomes
+\begin{equation}
+\begin{aligned}
+\hat\pi_i(w)
+&=\lambda_i(w)\bar p_i(w)
+  +\{1-\lambda_i(w)\}\mu_{\pi,g_i}(w),\\
+\lambda_i(w)
+&=\frac{n_i(w)}{n_i(w)+\phi_{g_i}(w)}.
+\end{aligned}
+\label{eq:disc-post}
+\end{equation}
+The analogous positive-size update uses discounted positive mass
+$n_i^+(w)$ and the group variance ratio $\kappa_{i,g}(w)$.
+
+\subsection{Candidate pooling structures}\label{sec:mixture}
+
+Let $\mathcal R$ contain three ways to construct $g(\cdot)$ from the
+fitting data. Table~\ref{tab:pool-candidates} orders them from coarse to
+fine: one prior for the panel, one prior per fixed demand-pattern class,
+and one prior per learned component. The ladder is deliberate. The
+question this paper asks is not which rung is best in general---that
+depends on the panel---but whether the discounted data support moving up
+it at all. Section~\ref{sec:resolution} gives the condition under which
+they do, and Section~\ref{sec:main-results} reports what happens when they
+do not.
+
+\begin{table}[t]
+\centering
+\caption{Pooling candidates used by \EBB{}, ordered coarse to fine.
+Every data-dependent label is computed from the selector's fitting head,
+never its validation tail.}
+\label{tab:pool-candidates}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lp{0.70\linewidth}}
+\toprule
+Candidate & Shared-prior groups\\
+\midrule
+Global & All items share one prior.\\
+Taxonomy & Four ADI/CV$^2$ demand-pattern classes (smooth, intermittent,
+erratic, lumpy) using the classical thresholds $1.32$ and $0.49$
+\citep{syntetos2005categorization}.\\
+Learned & Hard assignments from a mixture of occurrence--size prior
+components; $K\in\{1,\ldots,6\}$ is selected by BIC.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For the learned candidate, component $k$ carries
+$\eta_k=(\alpha_k,\beta_k,\mu_{0,k},\tau_k^2,\sigma_k^2)$. Its item
+marginal is the product of Beta--Binomial occurrence evidence and Normal
+random-effects size evidence. EM has an analytic responsibility update;
+its M-step maximizes responsibility-weighted EB objectives. A
+deterministic quantile initialization makes repeated fits seed-free.
+Mixture labels are built once from the fitting head and shared across the
+discount grid, with $K\in\{1,\dots,6\}$ selected by BIC at that fit.
+Re-learning the partition separately at every discount is a natural
+variant---changing $w$ changes both the item evidence and the components
+it can support---but we do not evaluate it here. The
+selected responsibilities are converted to hard labels so all three
+candidates share the same downstream forecaster.
+
+\subsection{Leakage-safe joint selection}\label{sec:select}
+
+Each training series is split chronologically into a fitting head
+$\mathcal H_i$ (first $80\%$) and validation tail $\mathcal V_i$ (last
+$20\%$). For every $(r,w)\in\mathcal R\times\mathcal W$, with
+\[
+\mathcal W=\{1,.999,.997,.995,.99,.98,.95,.90\},
+\]
+the partition builder for $r$ sees only $\mathcal H=\cup_i\mathcal H_i$.
+The resulting labels, discounted EB prior, and item posteriors are all
+fit on the same head. The candidate is scored by
+\begin{equation}
+\begin{aligned}
+\widehat R(r,w)
+&=\frac{1}{N_{\!V}}\sum_{i\in\mathcal I_V}
+  \frac{1}{|\mathcal V_i||\mathcal Q|}\\[-0.25em]
+&\quad\times
+  \sum_{t\in\mathcal V_i}\sum_{q\in\mathcal Q}
+  \frac{\rho_q(y_{i,t},\widehat Q_{i,t}^{(r,w)}(q))}{a_i},
+\end{aligned}
+\label{eq:selection-risk}
+\end{equation}
+where $\mathcal Q=\{.5,.75,.9\}$, $\rho_q$ is pinball loss, and $a_i$
+is mean absolute demand on the fitting head (with a panel-level fallback
+for an all-zero head); $N_V=|\mathcal I_V|$ is the number of scored
+items. Times and quantiles are averaged within item
+before items receive uniform weight. This matches the panel-level goal
+and prevents long series or high-volume items from dominating selection.
+
+The selected pair is
+$(\hat r,\hat w)=\arg\min_{r,w}\widehat R(r,w)$. Its partition is then
+\emph{relearned} on the complete training window at $\hat w$, and the EB
+model is refit once before external evaluation. Thus the validation tail
+chooses a construction rule and discount, not a permanent set of labels;
+external targets are never used. There are 24 outer forecast candidates.
+
+\paragraph{Resolution diagnostics.}
+Fitting each candidate already produces everything the resolution
+analysis of Section~\ref{sec:resolution} needs, so the selector records it
+rather than recomputing it later. For every $(r,w)$ and every resulting
+group $g$ we store, from the fitting head only, the median occurrence and
+positive-size credibility weights $\lambda_i^{(o)}$ and $\lambda_i^{(+)}$,
+the share of items with $\lambda_i^{(+)}<0.1$, the group sizes $m_g$, and
+the resolution statistic
+\[
+\hat z_g=\frac{S_g^2-\bar s_g}{\sqrt{2/(m_g-1)}\,S_g^2},
+\]
+whose nonpositive values coincide with the collapse event
+$\hat\tau_g^2=0$ of Proposition~\ref{prop:twosided}. These quantities cost
+nothing beyond the fit that produced them, they are computed before any
+external observation is seen, and they answer a question the validation
+score cannot: not which candidate scores best on the tail, but whether the
+discounted data contain enough information to estimate the candidate's
+group structure at all. Section~\ref{sec:main-results} uses them to
+separate the two. The full selection surface and the accompanying
+diagnostics are released with every run
+(\texttt{remix\_selection\_diagnostics.csv}).
+
+Appendix~\ref{app:implementation} gives split edge cases and
+pseudocode-level implementation details.
+
+\subsection{Forecasts and computation}\label{sec:complexity}
+
+Selection uses the analytic plug-in quantiles in
+\eqref{eq:predictive-law}. The reported probabilistic forecasts also
+average quantile estimates across $B=20$ cross-item bootstrap refits of
+the group hyperparameters. We treat this explicitly as a quantile
+ensemble; the average of component quantiles is not asserted to be the
+quantile of a single posterior mixture.
+
+For each $w$, one pass computes $S_i(w)$ in $O(\sum_iT_i)$ time. Each EB
+fit requires only low-dimensional deterministic optimization per group;
+mixture EM is $O(NK)$ per iteration. Prediction is $O(N)$ for points and
+$O(NQ)$ for $Q$ quantiles.
+
+Two properties of this cost profile matter for the comparisons that
+follow. First, the whole pipeline is CPU-only and closed form apart from
+the mixture search: fitting and predicting a panel costs on the order of
+milliseconds per series, so the full 24-candidate joint selection
+completes in minutes on a laptop-class machine and no GPU, tuning budget,
+or convergence diagnostic is required. Second, estimation is exact rather
+than approximate at every stage, so repeated end-to-end runs are
+bit-identical in the released test suite. Neither property is an accuracy
+claim; both are the terms on which the accuracy results in
+Section~\ref{sec:experiments} should be read, since several of the
+strongest comparators there cost two to three orders of magnitude more per
+series and none is reproducible to the bit. Measured wall-clock figures
+for every method are in Appendix~\ref{app:implementation}.
+
+% =========================================================================
+\section{Resolution under Forgetting}\label{sec:theory}
+% =========================================================================
+
+The shared operator in \eqref{eq:shared-recency} creates two opposing
+effects. A bounded item history prevents the group prior from vanishing,
+but the same bound limits the information used to estimate fine group
+structure. This section formalizes that interaction. Supporting results
+connecting the model to TSB, drift tracking, finite-class selection, and
+classical credibility are collected in Appendix~\ref{app:supporting}.
+
+\subsection{Persistent prior leverage}
+
+Fix an item and suppress its subscripts. Because
+$n(w)=\sum_{t=1}^{T}w^{T-t}\le(1-w)^{-1}$ for $w<1$, the occurrence
+credibility weight cannot converge to one.
+
+\begin{proposition}[Forgetting keeps pooling relevant]
+\label{prop:active}
+For every horizon $T$,
+$\lambda(w)\le\{1+(1-w)\phi\}^{-1}<1$ when $w<1$, whereas
+$\lambda(1)\to1$ as $T\to\infty$. Hence the pooled occurrence prior
+retains positive weight indefinitely under forgetting.
+\end{proposition}
+
+The statement is about leverage, not benefit: it does not guarantee
+that a particular prior is a good shrinkage target. It says that the
+choice of target can continue to affect forecasts even for old series.
+
+\subsection{Variance-component resolution}\label{sec:resolution}
+
+The converse problem appears in the positive-size block. Let item $i$
+in group $g$ have discounted positive mass $n_i^+$, sampling variance
+$s_i=\sigma_g^2/n_i^+$ for its log-size mean, and credibility
+$\lambda_i^{(+)}=n_i^+/(n_i^++\kappa_g)$ with
+$\kappa_g=\sigma_g^2/\tau_g^2$. The group variance is estimated by the
+truncated moment/REML form
+$\hat\tau_g^2=\max(0,S_g^2-\bar s_g)$, where $S_g^2$ is the sample
+variance of the $m_g$ item means and
+$\bar s_g=m_g^{-1}\sum_{i\in g}s_i$.
+
+\begin{proposition}[Two-sided effect of forgetting]
+\label{prop:twosided}
+\textbf{(i)} For $w<1$,
+$\lambda_i^{(+)}\le\{1+(1-w)\kappa_g\}^{-1}<1$.
+\textbf{(ii)} For independent item means with possibly unequal $s_i$,
+\[
+\E[S_g^2]=\tau_g^2+\bar s_g
+\]
+holds exactly. Under the Gaussian moment approximation,
+\begin{equation}
+\Pr(\hat\tau_g^2=0)\simeq
+\Phi\!\left(-\sqrt{\frac{m_g-1}{2}}\,\rho_g\right),
+\qquad
+\rho_g=\frac{\tau_g^2}{\tau_g^2+\bar s_g}.
+\label{eq:collapse-prob}
+\end{equation}
+Since $n_i^+\le(1-w)^{-1}$,
+$\bar s_g\ge(1-w)\sigma_g^2$ and therefore
+\[
+\rho_g\le
+\frac{\tau_g^2}{\tau_g^2+(1-w)\sigma_g^2}.
+\]
+On the collapse event the plug-in estimate has $\hat\tau_g^2=0$ and
+$\lambda_i^{(+)}=0$: the item mean is replaced by its estimated group
+mean.
+\end{proposition}
+
+The population ratio $\rho_g$ is not observed. For diagnostics we use
+\[
+\hat z_g=\frac{S_g^2-\bar s_g}
+{\sqrt{2/(m_g-1)}\,S_g^2},
+\]
+whose nonpositive values coincide with the plug-in collapse event.
+
+\begin{corollary}[Resolution condition]
+\label{cor:resolution}
+For this estimator and window, stable estimation of a group variance
+requires, up to a fixed probability threshold,
+\begin{gather*}
+\rho_g\sqrt{m_g-1}\gtrsim1,\\
+\text{equivalently}\qquad
+\tau_g^2\gtrsim
+\frac{\bar s_g}{\sqrt{m_g-1}-1},
+\end{gather*}
+with $\bar s_g\ge(1-w)\sigma_g^2$.
+\end{corollary}
+
+For similarity-based refinements, finer groups typically reduce both
+$m_g$ and the within-group spread $\tau_g^2$, while stronger forgetting
+raises the sampling-variance floor. All three changes move the estimator
+toward collapse. This is an estimator- and window-specific resolution
+condition, not an information-theoretic lower bound, and it does not say
+which candidate wins below the threshold.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.92\textwidth]{fig01_mechanism_v2.pdf}
+\caption{\textbf{One discount creates two opposing effects.}
+\textbf{(a)} The same recency operator reduces item effective history,
+which increases prior leverage, and group effective information, which
+reduces structural resolution. \textbf{(b)} When the partition must be
+estimated, the probability that
+the group variance collapses rises as the resolution statistic falls;
+the curve is the approximation in \eqref{eq:collapse-prob}.}
+\label{fig:mechanism}
+\end{figure*}
+
+Figure~\ref{fig:mechanism} summarizes why pooling can become more
+consequential at exactly the point where a fine partition becomes harder
+to estimate. Section~\ref{sec:synthetic} tests both sides with known group
+labels. Proofs and the accuracy limits of the approximation are given in
+Appendix~\ref{app:proofs} and Section~\ref{sec:limitations}.
+% Experiments are maintained separately so the main probabilistic narrative
+% and the supporting appendix evidence can be edited as one coherent unit.
+\input{sections/experiments}
+
+\section{Limitations}\label{sec:limitations}
+% =========================================================================
+
+\textbf{(1) The size law.} The log-normal positive-size block keeps
+item-posterior updates analytic, but its tail is conservative on panels
+with heavy-tailed spikes. % [ORIG 2026-09-06]
+% ORIG| Official TweedieGP is better on Carparts and
+% ORIG| throughout that panel's far tail, and conformal wrappers are better at q90
+% ORIG| on M5. A Gamma or Tweedie size block inside the same hierarchy is the
+% ORIG| natural next instantiation, and Table~\ref{tab:prob} indicates where it
+% ORIG| would pay.
+Official TweedieGP is better on Online Retail, Carparts, and M5, and
+throughout the Carparts far tail; conformal wrappers are better at q90 on
+M5. Two model-side remedies were tested and neither closes the gap
+(Appendix~\ref{app:negative}): replacing the log-normal size law by
+log-$t$, moment-matched Gamma, or inflated-scale variants of the same
+fitted posterior moves mean SPL by at most $0.003$ on every panel, and
+item-specific forgetting rates with empirical-Bayes shrinkage improve M5
+by $1.2\%$ but leave it $1.8\%$ behind TweedieGP and change no other
+panel by more than $0.1\%$, and a separate occurrence discount, chosen
+by the same validation rule, moves M5 by $0.14\%$. The remaining gap
+therefore lies in the posterior---per-series temporal adaptation and a
+single latent process for occurrence and size---rather than in the
+shape of the predictive law or the forgetting schedule.
+
+\textbf{(2) Saturation and calibration.} Raw intervals over-cover on the
+sparsest panels (Table~\ref{tab:coverage}), and on RAF the standard
+quantile levels saturate: the all-zero forecast attains a marginally lower
+mean SPL than every method. The far-tail levels ($q\ge0.95$) resolve this
+(Appendix~\ref{app:fartail}), but CRPS and a cost-based criterion remain
+unrun.
+
+\textbf{(3) Assumptions behind the resolution condition.}
+Corollary~\ref{cor:resolution} uses a Gaussian working model for the item
+means and a $\chi^2$ approximation for $S_g^2$, accurate except for small
+groups combining strongly unequal counts with strongly unequal sampling
+variances, where it understates the collapse probability by up to $0.21$.
+It is an estimator-specific estimability statement, not an
+information-theoretic impossibility result. Section~\ref{sec:leverage}
+shows the practical consequence of that distinction: the bound is an upper
+envelope, and on these panels it is not the binding constraint.
+
+\textbf{(4) The learnability gap is demonstrated, not closed.} % [ORIG 2026-09-13]
+% ORIG| Our
+% ORIG| strongest negative result---leverage exists and the learned partition does
+% ORIG| not exploit it---identifies a target rather than hitting it.
+Our
+strongest negative result---on the one panel with room, Carparts, neither
+the real nor the simulated learned partition collects it, and in
+simulation the mixture objective is negative at every moderate
+separation and neither label sample-splitting nor credibility shrinkage
+of the group variance recovers it (Appendix~\ref{app:simulation-details})---identifies a target rather than hitting it. Two
+extensions are directly implicated and neither is bounded by
+Corollary~\ref{cor:resolution} in the same way. A soft-responsibility
+predictive mixture adds one matrix multiply and changes the \emph{shape}
+of the predictive distribution rather than only the prior it shrinks
+toward, although the predictive-law variants of Appendix~\ref{app:negative}
+indicate that shape alone is not where the remaining gap lies. A partition objective that maximizes between-group separation
+subject to keeping $\rho_g\sqrt{m_g}$ above threshold would target
+learnability directly rather than likelihood. We report the gap because we
+can measure it, not because we have closed it.
+
+\textbf{(5) Baseline and inference scope.} We do not run external
+hierarchical Bayesian implementations
+\citep{chapados2014,seeger2016,pitkin2024}; claims about them are limited
+to their published computational profiles.
+Appendix~\ref{app:mcmc} closes the inference-method half of this gap---a
+four-chain full-posterior Gibbs sampler matches plug-in EB within $0.1\%$
+on SPL---so the EB approximation is not the distributional-accuracy
+bottleneck, but the model-class half remains open. Our adaptive conformal
+comparison is one ACI design, not an exhaustive study of weighted or
+model-specific conformal methods; given how much it changed the baseline
+(Section~\ref{sec:walkforward}), the remaining designs deserve more
+attention than they have received in this literature. DeepState,
+Chronos-Bolt, and Deep Renewal Process comparisons use subset or proxy
+protocols and are reported only in Appendix~\ref{app:neural}.
+
+\textbf{(6) Criterion and deployment alignment.} Selection uses a single
+pinball-based score; the selector tracks whichever criterion it is given
+(Section~\ref{sec:criterion}), but a cross-objective study including an
+inventory cost criterion is future work. The discount is selected under
+the fixed-origin protocol and reused in walk-forward: we keep the
+initialization discount and the online block update distinct and do not
+compound them, and we do not evaluate re-selection at every block.
+Appendix~\ref{app:extra} records the remaining protocol details, including
+the reduced refit cadence for AutoARIMA, AutoTheta, and iETS on Online
+Retail.
+
+% =========================================================================
+\section{Conclusion}\label{sec:conclusion}
+% =========================================================================
+
+Intermittent-demand forecasting requires two structural choices: how
+strongly to discount the past, and how to pool evidence across items.
+\EBB{} makes both by chronological validation inside a scalable
+sufficient-statistic empirical-Bayes family, applying one recency operator
+to item- and group-level statistics alike. % [ORIG 2026-09-06]
+% ORIG| Across five public panels it
+% ORIG| % [2026-09-05 STALE] now two of five (Auto, RAF); TweedieGP ahead on OR/M5/Carparts
+% ORIG| attains the lowest mean scaled pinball loss on four, with an official
+% ORIG| Tweedie--Gaussian-process specialist ahead on Carparts by half a percent,
+% ORIG| % [2026-09-06 STALE] under walk-forward EBB leads on Auto and RAF only (TweedieGP: OR, Carparts; ACI: M5).
+% ORIG| and it leads under strict walk-forward updating on both a long daily and a
+% ORIG| short monthly panel. 
+Across five public panels and two
+% [ORIG 2026-09-07]
+% ORIG| protocols it is within $3\%$ (fixed origin) and $5\%$ (walk-forward) of
+% ORIG| the best method everywhere, a property shared only by an official
+% ORIG| Tweedie--Gaussian-process specialist that costs one to two orders of
+% ORIG| magnitude more and must be refit at every update. \EBB{} leads that
+% ORIG| specialist on Auto and RAF and trails it by under one percent on Online
+% ORIG| Retail and Carparts and by $2.9\%$ on M5 at fixed origin, where adaptive
+% ORIG| conformal inference leads under walk-forward updating. 
+protocols it is within $3\%$ (fixed origin) and $5\%$ (walk-forward) of
+the best competing method everywhere, a property shared only by an
+official Tweedie--Gaussian-process specialist that costs one to two orders
+of magnitude more and must be refit at every update. \EBB{} leads that
+specialist on Auto and RAF and trails it by under one percent on Online
+Retail and Carparts and by $2.9\%$ on M5 at fixed origin. Under
+% [ORIG 2026-09-09]
+% ORIG| walk-forward updating the adaptive conformal layer decides M5: applied to
+% ORIG| \EBB{} it leads, applied to ADIDA it is second, and uncalibrated \EBB{} is
+% ORIG| third. 
+walk-forward updating the adaptive conformal layer decides M5: applied to
+\EBB{} it leads, applied to ADIDA it is second, and uncalibrated \EBB{} is
+third; a validation-tail rule selects the layer where it helps and leaves
+\EBB{} within 0.8\% of the best competing method on every panel. These are distributional results obtained from a
+closed-form, CPU-only, bit-reproducible predictive law; point forecasts
+are competitive but not uniformly best.
+
+The two choices turn out to be asymmetric, and the asymmetry is the
+paper's finding. Discounting is a first-order decision: all five panels
+select it, and on the one panel where both effects are measurable it is
+worth an order of magnitude more than refining the pooling structure.
+Refinement, by contrast, improves external accuracy on none of the five
+panels and exceeds selector noise on only one.
+
+Why it fails is the more useful result. Forgetting has two opposing
+effects on pooling---it keeps a shared prior's leverage alive while
+eroding the information that would resolve fine group structure---and the
+resulting credibility weight bounds how much any partition could be worth.
+% [ORIG 2026-09-13]
+% ORIG| That bound is real but not binding. Three panels retain substantial room,
+% ORIG| and one of them, Online Retail, sits at the leverage where a supplied true
+% ORIG| partition earns more than two percent in controlled study; its learned
+% ORIG| partition returns $-0.05\%$. The constraint on cross-series pooling in
+% ORIG| these data is therefore learnability rather than leverage: the structure
+% ORIG| would pay if it were correct, and current mixture objectives do not find
+% ORIG| it. Separating those two explanations required the diagnostic, and the
+% ORIG| diagnostic costs nothing beyond the fit that produces it.
+Once group separation is placed on the same surface as leverage, that
+bound binds on four of five panels: a supplied true partition would earn
+nothing there, and nothing is found. On Carparts it would earn $1.8$ to
+$2.4\%$, the learned partition returns $-0.08\%$, and the same objective
+loses at those coordinates in simulation. The constraint on cross-series
+pooling in these data is therefore the absence of room on most panels and
+learnability on the one panel that has it. Separating those two
+explanations required the diagnostic, and the diagnostic costs nothing
+beyond the fit that produces it.
+
+Two evaluation conventions actively obscure this picture, and both are
+inherited rather than incidental. Absolute-error metrics reward the
+all-zero forecast on three of five panels and reverse the ranking of a
+known-correct partition in simulation; they should not be the sole basis
+for comparing intermittent-demand forecasters. Static split-conformal
+wrappers, the field's standard probabilistic baseline, understate what
+conformal prediction achieves here by roughly twenty percent relative to
+an adaptive construction---a margin several times larger than most method
+differences reported on these panels, including our own.
+
+The practical value of \EBB{} is accordingly not a claim of universal
+accuracy but a cheap, deterministic predictive distribution together with
+an ex ante account of when temporal adaptation and finer pooling can
+matter. The most direct next steps follow from the gap the diagnostic
+exposes: partition objectives that optimize resolvable separation rather
+than marginal likelihood, predictive mixtures that alter distributional
+shape rather than only the shrinkage target, and decision-aware sequential
+selection.
+
+% =========================================================================
+\section*{Reproducibility Statement}
+All five datasets are public (UCI 352; Kaggle M5-Accuracy; the gluon-ts
+\texttt{intermittent-datasets} branch for Auto and RAF; Zenodo record
+4656022 for Carparts). Conversion and preprocessing scripts are included
+in the released code. The full pipeline uses deterministic low-dimensional
+EB optimization and seed-free quantile-based EM initialization, so no seed
+policy is required for the forecaster itself. The stochastic elements are
+the seed-controlled M5 subsample and the $B{=}20$ bootstrap; M5 results
+are reported for seed~42 in the main tables and audited across three
+independently drawn samples, which select the same configuration in every
+case. An automated test asserts that two end-to-end runs are
+bit-identical. Every table maps to one experiment directory via a manifest
+file, and each run writes its selection diagnostics---chosen partition,
+discount, BIC curves, and credibility leverage---alongside its metrics. Hardware and
+timing methodology are specified in Appendix~\ref{app:implementation}.
+The complete experiment suite runs on one CPU workstation in under a
+day, dominated by the statistical baselines rather than \EBB{}. An
+anonymized code repository will accompany the submission.
+
+\begin{thebibliography}{99}
+
+\bibitem[B\"uhlmann(1967)]{buhlmann1967}
+H.~B\"uhlmann.
+\newblock Experience rating and credibility.
+\newblock \emph{ASTIN Bulletin}, 4(3):199--207, 1967.
+
+\bibitem[Chapados(2014)]{chapados2014}
+N.~Chapados.
+\newblock Effective Bayesian modeling of groups of related count time series.
+\newblock In \emph{ICML}, 2014.
+
+\bibitem[Chen(2015)]{chen2015}
+D.~Chen.
+\newblock Online Retail dataset, UCI Machine Learning Repository, 2015.
+
+\bibitem[Cini et~al.(2024)]{cini2024}
+A.~Cini, D.~Mandic, and C.~Alippi.
+\newblock Graph-based time series clustering for end-to-end hierarchical
+  forecasting.
+\newblock In \emph{ICML}, volume 235 of PMLR, pages 8985--8999, 2024.
+
+\bibitem[Croston(1972)]{croston1972}
+J.~D. Croston.
+\newblock Forecasting and stock control for intermittent demands.
+\newblock \emph{Operational Research Quarterly}, 23(3):289--303, 1972.
+
+\bibitem[Damato et~al.(2025)]{damato2025}
+S.~Damato, D.~Azzimonti, and G.~Corani.
+\newblock Forecasting intermittent time series with Gaussian processes and
+  Tweedie likelihood.
+\newblock \emph{International Journal of Forecasting}, 2025.
+
+\bibitem[Gibbs and Cand\`es(2021)]{gibbs2021}
+I.~Gibbs and E.~Cand\`es.
+\newblock Adaptive conformal inference under distribution shift.
+\newblock In \emph{NeurIPS}, 2021.
+
+\bibitem[Gneiting and Raftery(2007)]{gneiting2007}
+T.~Gneiting and A.~E. Raftery.
+\newblock Strictly proper scoring rules, prediction, and estimation.
+\newblock \emph{JASA}, 102(477):359--378, 2007.
+
+\bibitem[Ibrahim and Chen(2000)]{ibrahimchen2000}
+J.~G. Ibrahim and M.-H. Chen.
+\newblock Power prior distributions for regression models.
+\newblock \emph{Statistical Science}, 15(1):46--60, 2000.
+
+\bibitem[Keribin(2000)]{keribin2000}
+C.~Keribin.
+\newblock Consistent estimation of the order of mixture models.
+\newblock \emph{Sankhy\=a A}, 62(1):49--66, 2000.
+
+\bibitem[Kolassa(2016)]{kolassa2016}
+S.~Kolassa.
+\newblock Evaluating predictive count data distributions in retail sales
+  forecasting.
+\newblock \emph{International Journal of Forecasting}, 32(3):788--803, 2016.
+
+\bibitem[Kourentzes and Petropoulos(2016)]{kourentzes2016}
+N.~Kourentzes and F.~Petropoulos.
+\newblock Forecasting with multivariate temporal aggregation.
+\newblock \emph{Int.\ J.\ Production Economics}, 181:145--153, 2016.
+
+\bibitem[Lei et~al.(2018)]{lei2018}
+J.~Lei, M.~G'Sell, A.~Rinaldo, R.~J. Tibshirani, and L.~Wasserman.
+\newblock Distribution-free predictive inference for regression.
+\newblock \emph{JASA}, 113(523):1094--1111, 2018.
+
+\bibitem[Liu et~al.(2025)]{liu2025moirai}
+X.~Liu, J.~Liu, G.~Woo, T.~Aksu, Y.~Liang, R.~Zimmermann, C.~Liu,
+  J.~Li, S.~Savarese, C.~Xiong, and D.~Sahoo.
+\newblock Moirai-MoE: Empowering time series foundation models with sparse
+  mixture of experts.
+\newblock In \emph{ICML}, volume 267 of PMLR, pages 38940--38962, 2025.
+
+\bibitem[Makridakis et~al.(2022)]{makridakis2022}
+S.~Makridakis, E.~Spiliotis, and V.~Assimakopoulos.
+\newblock M5 accuracy competition: Results, findings, and conclusions.
+\newblock \emph{International Journal of Forecasting}, 38(4):1346--1364, 2022.
+
+\bibitem[Montero-Manso and Hyndman(2021)]{monteromanso2021}
+P.~Montero-Manso and R.~J. Hyndman.
+\newblock Principles and algorithms for forecasting groups of time
+  series: Locality and globality.
+\newblock \emph{International Journal of Forecasting}, 37(4):1632--1653,
+  2021.
+
+\bibitem[Nikolopoulos et~al.(2011)]{nikolopoulos2011}
+K.~Nikolopoulos, A.~A. Syntetos, J.~E. Boylan, F.~Petropoulos, and
+  V.~Assimakopoulos.
+\newblock An aggregate--disaggregate intermittent demand approach (ADIDA).
+\newblock \emph{JORS}, 62(3):544--554, 2011.
+
+\bibitem[Pitkin et~al.(2024)]{pitkin2024}
+J.~Pitkin, I.~Manolopoulou, and G.~Ross.
+\newblock Bayesian hierarchical modelling of sparse count processes in
+  retail analytics.
+\newblock \emph{Annals of Applied Statistics}, 18(2):946--965, 2024.
+
+\bibitem[Salinas et~al.(2020)]{salinas2020}
+D.~Salinas, V.~Flunkert, J.~Gasthaus, and T.~Januschowski.
+\newblock DeepAR: Probabilistic forecasting with autoregressive recurrent
+  networks.
+\newblock \emph{International Journal of Forecasting}, 36(3):1181--1191, 2020.
+
+\bibitem[Seeger et~al.(2016)]{seeger2016}
+M.~Seeger, D.~Salinas, and V.~Flunkert.
+\newblock Bayesian intermittent demand forecasting for large inventories.
+\newblock In \emph{NeurIPS}, 2016.
+
+\bibitem[Snyder et~al.(2012)]{snyder2012}
+R.~D. Snyder, J.~K. Ord, and A.~Beaumont.
+\newblock Forecasting the intermittent demand for slow-moving
+  inventories: A modelling approach.
+\newblock \emph{International Journal of Forecasting}, 28(2):485--496,
+  2012.
+
+\bibitem[Svetunkov and Boylan(2023)]{svetunkov2023iets}
+I.~Svetunkov and J.~E. Boylan.
+\newblock iETS: State space model for intermittent demand forecasting.
+\newblock \emph{Int.\ J.\ Production Economics}, 265, 2023.
+
+\bibitem[Syntetos and Boylan(2005)]{syntetos2005accuracy}
+A.~A. Syntetos and J.~E. Boylan.
+\newblock The accuracy of intermittent demand estimates.
+\newblock \emph{International Journal of Forecasting}, 21(2):303--314, 2005.
+
+\bibitem[Syntetos et~al.(2005)]{syntetos2005categorization}
+A.~A. Syntetos, J.~E. Boylan, and J.~D. Croston.
+\newblock On the categorization of demand patterns.
+\newblock \emph{JORS}, 56(5):495--503, 2005.
+
+\bibitem[Teunter et~al.(2011)]{teunter2011}
+R.~H. Teunter, A.~A. Syntetos, and M.~Z. Babai.
+\newblock Intermittent demand: Linking forecasting to inventory
+  obsolescence.
+\newblock \emph{EJOR}, 214(3):606--615, 2011.
+
+\bibitem[West and Harrison(1997)]{westharrison1997}
+M.~West and J.~Harrison.
+\newblock \emph{Bayesian Forecasting and Dynamic Models}.
+\newblock Springer, 2nd edition, 1997.
+
+\bibitem[T\"urkmen et~al.(2019)]{turkmen2019}
+A.~C. T\"urkmen, Y.~Wang, and T.~Januschowski.
+\newblock Intermittent demand forecasting with deep renewal processes.
+\newblock \emph{arXiv:1911.10416}, 2019.
+
+\end{thebibliography}
+
+% =========================================================================
+\appendix
+\onecolumn
+
+\section{Notation}\label{app:notation}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+$y_{i,t}$, $z_{i,t}$, $\ell_{i,t}$ & demand, occurrence indicator, log-size\\
+$T_i$ & initialization-window length of item $i$\\
+$g(i)$, $K$ & pooling group of item $i$; number of mixture components\\
+$\alpha_g,\beta_g$ & Beta occurrence prior; $\phi_g=\alpha_g+\beta_g$ its strength\\
+$\mu_{0,g},\tau^2_g,\sigma^2_g$ & size prior location, between/within-item variances\\
+$w$; $b$ & recency discount; forgetting strength $b=1-w$\\
+$n_i(w), c_i(w)$ & discounted observation / occurrence pseudo-counts\\
+$\bar p_i(w)$ & discounted empirical occurrence rate $c_i(w)/n_i(w)$\\
+$\lambda_i(w)$ & credibility weight $n_i(w)/(n_i(w)+\phi_g)$\\
+$\hat\pi_i,\hat\mu_i,\hat\sigma^2_i$ & posterior means of occurrence, log-size, variance\\
+$\alpha_p$ & classical TSB occurrence smoothing constant ($=1-w$)\\
+$\delta$ & occurrence drift rate (Proposition~\ref{prop:drift})\\
+$M$, $n$ & candidate count and validation size (Prop.~\ref{prop:oracle})\\
+$B$ & bootstrap draws for hyperparameter averaging\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Supporting Results}\label{app:supporting}
+
+This appendix records four connections that support the construction but
+are not the paper's main theoretical contribution: the relation to TSB,
+a tracking bound under drift, finite-class selection, and classical
+credibility.
+
+\subsection{Relation to the TSB occurrence recursion}
+
+Write $p_t=z_{i,t}$ for one fixed item. Let $\hat p_T$ be classical
+TSB's occurrence estimate with smoothing $\alpha_p=1-w$ and
+initialization $\hat p_0$.
+
+\begin{proposition}[TSB occurrence as a boundary case]
+\label{prop:tsb-limit}
+For $w\in(0,1)$:
+(i) $\lim_{(\alpha,\beta)\to(0,0)}\hat\pi(w)=\bar p(w)$;
+(ii) $\hat p_T=(1-w)\sum_{t=1}^{T}w^{T-t}p_t+w^T\hat p_0$ and
+$\bar p(w)=(\hat p_T-w^T\hat p_0)/(1-w^T)$;
+(iii) hence $\bar p(w)=\hat p_T$ under the self-consistent initialization
+$\hat p_0=\bar p(w)$, and
+$|\bar p(w)-\hat p_T|\le w^T$ in general.
+\end{proposition}
+
+The equivalence concerns only the occurrence block. Classical TSB uses
+arithmetic smoothing for positive sizes, whereas \EBB{} discounts
+positive log-sizes under \eqref{eq:model}.
+
+\subsection{Tracking bound under occurrence drift}
+
+\begin{proposition}[Tracking risk under drift]
+\label{prop:drift}
+If $p_t\sim\mathrm{Bern}(\pi_t)$ independently and
+$|\pi_t-\pi_T|\le\delta(T-t)$, then
+$|\E\bar p(w)-\pi_T|\le\delta w/[(1-w)(1-w^T)]$ and
+$\Var\bar p(w)\le\tfrac14(1-w)(1+w^T)/[(1+w)(1-w^T)]$, with the
+corresponding bias--variance decomposition for the posterior mean.
+\end{proposition}
+
+\begin{corollary}\label{cor:rate}
+Balancing the two bounds gives
+$1-w^*\asymp\delta^{2/3}$, worst-case MSE
+$O(\delta^{2/3})$, and $w^*\to1$ as $\delta\to0$.
+\end{corollary}
+
+This result motivates including $w=1$ in the candidate grid; it does not
+claim that chronological validation estimates the bound-optimal $w^*$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.93\linewidth]{figs/drift_tradeoff.pdf}
+\caption{Bias--variance bounds in Proposition~\ref{prop:drift}. Stars
+mark the minimizing forgetting strength; as drift $\delta$ increases,
+the optimum moves at the rate in Corollary~\ref{cor:rate}.}
+\label{fig:tradeoff}
+\end{figure}
+
+\subsection{Finite candidate selection}
+
+\begin{proposition}[Conditional finite-class bound]
+\label{prop:oracle}
+Let $R(c)$ be the expected validation risk of candidate $c$ and
+$\hat R(c)$ its average over $n$ validation items. If the item losses are
+independent conditional on the fitted candidates and lie in $[0,B]$, then
+the minimizer $\hat c$ over $M$ candidates satisfies, with probability at
+least $1-\eta$,
+\[
+R(\hat c)\le\min_cR(c)+B\sqrt{\frac{2\log(2M/\eta)}{n}}.
+\]
+\end{proposition}
+
+The independent units are items, because observations and quantiles are
+averaged within item before selection. The released selector does not
+clip scaled pinball loss, so the bounded-loss assumption is not automatic
+and this proposition is not presented as a formal guarantee for the
+unclipped implementation. It records the standard finite-class behavior
+under an explicit clipping condition.
+
+\subsection{Classical credibility}
+
+\begin{proposition}[Pooling reduces Bayes risk in the stationary model]
+\label{prop:credibility}
+Under the undiscounted Beta--Binomial occurrence model with known
+hyperparameters, the posterior mean is the Bayes estimator of $\pi_i$
+under squared loss and has strictly smaller Bayes risk than the per-item
+empirical rate whenever $\phi_g>0$. Its optimal weight is the classical
+credibility factor $\lambda_i=n_i/(n_i+\phi_g)$
+\citep{buhlmann1967}.
+\end{proposition}
+
+This is the B\"uhlmann--Straub result specialized to Bernoulli
+occurrences. It justifies pooling when the stationary hierarchical model
+is correctly specified; it does not assert that a misspecified or stale
+group prior helps under drift.
+
+\section{Proofs}\label{app:proofs}
+
+\subsection{Proof of Proposition~\ref{prop:tsb-limit}}
+(i) Immediate from \eqref{eq:disc-post} since $c(w),n(w)$ are finite.
+(ii) Induction: $\hat p_1=(1-w)p_1+w\hat p_0$. If the closed form holds at
+$T-1$, then
+$\hat p_T=(1-w)p_T+w\hat p_{T-1}=(1-w)\sum_{t=1}^{T}w^{T-t}p_t+w^{T}\hat p_0$.
+With $n(w)=(1-w^{T})/(1-w)$,
+\[
+\bar p(w)=\frac{(1-w)\sum_t w^{T-t}p_t}{1-w^{T}}
+=\frac{\hat p_T-w^{T}\hat p_0}{1-w^{T}}.
+\]
+(iii) Rearranging, $\bar p(w)-\hat p_T=w^{T}(\bar p(w)-\hat p_0)$, and
+$|\bar p(w)-\hat p_0|\le1$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:active}}
+$n(w)=(1-w^{T})/(1-w)\le1/(1-w)$ and $x\mapsto x/(x+\phi)$ is increasing,
+so $\lambda(w)\le[1/(1-w)]/[1/(1-w)+\phi]=1/(1+(1-w)\phi)$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:drift} and
+Corollary~\ref{cor:rate}}
+With $k=T-t$ and $\sum_{k\ge0}kw^k=w/(1-w)^2$,
+\[
+\bigl|\E\bar p(w)-\pi_T\bigr|
+=\Bigl|\frac{\sum_t w^{T-t}(\pi_t-\pi_T)}{n(w)}\Bigr|
+\le\frac{\delta\,w/(1-w)^2}{(1-w^{T})/(1-w)}
+=\delta\,\frac{w}{(1-w)(1-w^{T})}.
+\]
+By independence and $\pi_t(1-\pi_t)\le\tfrac14$,
+\[
+\Var\,\bar p(w)\le\frac{\tfrac14\,(1-w^{2T})/(1-w^{2})}
+{[(1-w^{T})/(1-w)]^{2}}
+=\frac14\cdot\frac{(1-w)(1+w^{T})}{(1+w)(1-w^{T})}.
+\]
+Decomposing
+$\hat\pi-\pi_T=\lambda(\bar p-\E\bar p)+\lambda(\E\bar p-\pi_T)+(1-\lambda)(\mu_\pi-\pi_T)$,
+the first term is zero-mean and independent of the deterministic
+remainder, giving
+$\E(\hat\pi-\pi_T)^2\le[\lambda\mathrm{B}(w)+(1-\lambda)|\mu_\pi-\pi_T|]^2
++\lambda^2\Var\bar p(w)$ with $\mathrm{B}(w)$ the bias bound. For the
+corollary set $b=1-w$ and let $T\to\infty$ (so $w^{T}\to0$): the squared
+bias bound behaves as $\delta^2(1-b)^2/b^2\sim\delta^2/b^2$ and the
+variance bound becomes $\tfrac14\, b/(2-b)$, which is $b/8$ to leading
+order as $b\to0$. Minimizing $f(b)=\delta^2/b^2+b/8$ gives
+$f'(b)=-2\delta^2/b^3+1/8=0$, i.e.,
+$b^{*}=(16\delta^{2})^{1/3}=2^{4/3}\delta^{2/3}$, and
+$f(b^{*})=O(\delta^{2/3})$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:oracle}}
+For each candidate $c$, Hoeffding's inequality for independent scores in
+$[0,B]$ gives
+$\Pr\bigl(|\hat R(c)-R(c)|>t\bigr)\le2\exp(-2nt^2/B^2)$. A union bound
+over the $M$ candidates makes
+$\sup_c|\hat R(c)-R(c)|\le t$ hold with probability at least
+$1-2M\exp(-2nt^2/B^2)$. Setting the right side to $\eta$ yields
+$t=B\sqrt{\log(2M/\eta)/(2n)}$. On this event,
+$R(\hat c)\le\hat R(\hat c)+t\le\hat R(c^{*})+t\le R(c^{*})+2t$ with
+$c^{*}=\arg\min_c R(c)$, which is the claim with constant
+$2t=B\sqrt{2\log(2M/\eta)/n}$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:credibility}}
+With known $(\alpha_g,\beta_g)$ and $s_i\mid\pi_i\sim
+\mathrm{Bin}(n_i,\pi_i)$, $\pi_i\sim\mathrm{Beta}(\alpha_g,\beta_g)$,
+the posterior mean $\hat\pi_i=\lambda_i\bar p_i+(1-\lambda_i)\mu_\pi$
+with $\lambda_i=n_i/(n_i+\phi_g)$ minimizes Bayes risk under squared
+loss among all estimators (tower property). Restricting to linear
+combinations $a\bar p_i+b$, the Bayes risk is
+$a^2\,\E[\Var(\bar p_i\mid\pi_i)] + (1-a)^2\Var(\pi_i)$ at the optimal
+intercept, minimized at
+$a^{*}=\Var(\pi_i)/\bigl(\Var(\pi_i)+\E[\Var(\bar p_i\mid\pi_i)]\bigr)
+=\lambda_i$, the B\"uhlmann credibility weight. The minimum is strictly
+below the risk of $a=1$ (the empirical rate) whenever
+$\Var(\pi_i)<\infty$ and $\phi_g>0$. \qed
+
+\subsection{Proof of Proposition~\ref{prop:twosided} and
+Corollary~\ref{cor:resolution}}
+
+\textbf{(i)} $\lambda_i=n_i/(n_i+\kappa_g)$ is increasing in $n_i$, and
+$n_i\le\sum_{k\ge0}w^{k}=(1-w)^{-1}$ for $w<1$. Substituting the bound,
+$\lambda_i\le\frac{(1-w)^{-1}}{(1-w)^{-1}+\kappa_g}
+=\bigl[1+(1-w)\kappa_g\bigr]^{-1}$, which is $<1$ whenever $w<1$ and
+$\kappa_g>0$.
+
+\textbf{(ii)} Write $\bar y_i=\mu_i+e_i$ with
+$\mu_i\sim N(\mu_g,\tau_g^2)$ and $e_i\sim N(0,s_i)$ independent,
+$s_i=\sigma_g^2/n_i$, so $\Var(\bar y_i)=\tau_g^2+s_i$. For the sample
+variance $S_g^2=(m_g-1)^{-1}\sum_{i\in g}(\bar y_i-\bar{\bar y})^2$,
+independence gives
+$\Var(\bar{\bar y})=m_g^{-2}\sum_i(\tau_g^2+s_i)$ and hence
+\[
+\E[S_g^2]=\frac{\sum_i(\tau_g^2+s_i)-m_g\Var(\bar{\bar y})}{m_g-1}
+=\frac{(1-m_g^{-1})\sum_i(\tau_g^2+s_i)}{m_g-1}
+=\tau_g^2+\bar s_g ,
+\]
+exactly, with no balance assumption. The estimator truncates precisely
+when $S_g^2\le\bar s_g$. Under the working model $S_g^2$ is
+approximately $(\tau_g^2+\bar s_g)\chi^2_{m_g-1}/(m_g-1)$, so
+$\Var(S_g^2)\simeq\frac{2}{m_g-1}(\tau_g^2+\bar s_g)^2$ and the
+standardized distance from the truncation boundary is
+\[
+\frac{\E[S_g^2]-\bar s_g}{\sqrt{\Var(S_g^2)}}
+=\frac{\tau_g^2}{\sqrt{2/(m_g-1)}\,(\tau_g^2+\bar s_g)}
+=\sqrt{\tfrac{m_g-1}{2}}\;\rho_g ,
+\]
+giving the stated normal approximation for
+$\Pr[S_g^2\le\bar s_g]$. The discount bound follows from
+$n_i\le(1-w)^{-1}$: $s_i=\sigma_g^2/n_i\ge(1-w)\sigma_g^2$ for every
+$i$, hence $\bar s_g\ge(1-w)\sigma_g^2$, and $\rho_g$ is decreasing in
+$\bar s_g$. Finally $\hat\tau_g^2=0$ gives $\kappa_g=\infty$ and
+$\lambda_i=0$.
+
+\textbf{Corollary.} Requiring the collapse probability to stay below a
+fixed level is, by (ii), the condition $\rho_g\sqrt{(m_g-1)/2}\ge c$ for
+a constant $c$ of order one. Solving
+$\rho_g=\tau_g^2/(\tau_g^2+\bar s_g)\ge c\sqrt{2/(m_g-1)}$ for
+$\tau_g^2$ gives
+$\tau_g^2\ge\bar s_g\,c\sqrt{2}/(\sqrt{m_g-1}-c\sqrt2)$, i.e.\ the
+stated order $\bar s_g/(\sqrt{m_g-1}-1)$ up to the constant. Refining a
+partition decreases $m_g$ and, by construction of the mixture objective,
+$\tau_g^2$, while decreasing $w$ raises the floor $(1-w)\sigma_g^2$ on
+$\bar s_g$. Each shrinks the left side or raises the right side. \qed
+
+The algebraic steps, the exact unbiasedness in (ii), and the monotonicity
+claims are verified with a computer algebra system in
+the released test suite. The $\chi^2$ approximation in (ii) is checked
+against Monte Carlo simulation, agreeing to within $0.05$ in probability
+across the regimes we use.
+
+\section{Implementation details}\label{app:implementation}
+
+\paragraph{EB fitting.} Group Beta--Binomial hyperparameters maximize the
+(weighted) marginal likelihood by L-BFGS-B with positivity bounds; the
+size block uses pooled within-item variance for $\sigma^2_g$ and an
+intercept-only restricted marginal likelihood in $\tau^2_g$ with profiled
+$\mu_{0,g}$; item-level process variances use the conjugate
+scaled-inv-$\chi^2$ update with $\nu{=}20$. With discounting, every count
+is replaced by its weighted analogue \eqref{eq:discounted-stats}; the
+Beta--Binomial marginal extends to real pseudo-counts via log-Gamma
+functions. The predictive law is zero-inflated log-normal with predictive
+variance $\hat\sigma^2_{\mathrm{proc}}+\hat v_\mu$. The released
+configuration averages quantiles over $B{=}20$ bootstrap resamples of the
+item-statistics rows. An optional location-scale calibration layer exists
+but is \emph{off} in all headline results; the adaptive conformal
+comparison is reported as a separate baseline rather than used to modify
+\EBB{} after fitting.
+
+\paragraph{Mixture EM.} Deterministic quantile initialization over
+(occurrence rate, mean log-size); degenerate components (mass $<2$)
+frozen to global fallback priors; tolerance $10^{-5}$, max 60 iterations;
+$K\in\{1,\dots,6\}$ by BIC with $5K+(K-1)$ parameters.
+
+\paragraph{Selection.} Internal chronological split (first 80\% / last
+20\%, min head 8); score = mean pinball over $q\in\{0.5,0.75,0.9\}$,
+per-series scaled by head mean absolute demand, averaged within item and then
+uniformly across items; grid over
+$w\in\{1,0.999,0.997,0.995,0.99,0.98,0.95,0.90\}$ and partitions
+\{global, taxonomy, mixture(BIC)\}. Selected configurations per dataset
+are reported beneath Table~\ref{tab:point}; diagnostics
+(\texttt{remix\_selection\_diagnostics.csv}) accompany every run.
+
+\paragraph{Environment and timing methodology.} All experiments ran on one
+Windows~11 workstation (Intel Core Ultra~9 275HX, 32\,GB RAM). Core
+determinism tests are bit-identical within this environment;
+cross-environment bit identity is not claimed. Timing is wall-clock and
+excludes data loading. Joint selection over the 24 candidates takes
+$51$--$243$ seconds per panel, with one deterministic six-$K$ EM/BIC
+search for the mixture on the fitting head. Final model-only point plus
+five-quantile prediction with $B=20$ takes 6.2 seconds on
+Carparts, 38.0 on Online Retail, and 124.0 on M5, whose
+external span has 3.235 million observations. GPU is not used in \EBB{}.
+
+\paragraph{Baselines.} StatsForecast defaults; TSB
+$(\alpha_d,\alpha_p)=(0.5,0.45)$; AutoARIMA/AutoTheta season 7 (daily) /
+12 (monthly) for intervals. TSB-tuned: $5\times5$ grid
+$\alpha_d\in\{0.05,0.1,0.2,0.35,0.5\}$,
+$\alpha_p\in\{0.01,0.05,0.1,0.25,0.45\}$ (25 candidates, the same order
+as \EBB{}'s 24), scored on the identical 80/20 chronological split by
+per-series scaled MAE (so neither method is scored on its home
+criterion), refit on the full window. Selected $(\alpha_d,\alpha_p)$:
+Online Retail $(0.10,0.25)$; M5 $(0.20,0.01)$; Auto $(0.20,0.10)$;
+Carparts $(0.50,0.45)$, i.e.\ the textbook constants; RAF
+$(0.50,0.25)$. Static conformal wrappers use a chronological 80/20 split
+and a \emph{panel-pooled} signed-residual distribution; quantiles are
+zero-truncated and monotonized. The ACI variants retain that residual
+pool and adapt the requested level for every series--quantile pair with
+$\gamma=0.05$. Tweedie-GLM is a per-series autoregressive GLM with log
+link, $p{=}1.5$, 14 lags (daily) / 6 (monthly), and $\ell_2{=}0.1$.
+TweedieGP uses the authors' official implementation with Tweedie
+likelihood, median-demand scaling, RBF kernel, and 50{,}000 predictive
+samples; zero-only training series receive a zero fallback so that every
+series is scored. iETS uses \texttt{smooth::adam} with automatic
+occurrence modeling.
+
+\section{Additional results}\label{app:extra}
+
+\input{sections/experiment_appendix}
+
+\subsection{Released tables and artifacts}
+Complete per-dataset tables with RMSE, WRMSSE, all quantile levels,
+coverage, interval widths, fixed-corner ablations, and runtimes accompany
+the code release, together with the selection surfaces and per-run
+diagnostics behind every table in this paper.
+
+\subsection{Machine-readable significance output}
+The complete per-series results behind Table~\ref{tab:significance} and
+Table~\ref{tab:spl-significance}, including the RMSE tests and the
+Holm-adjusted families, accompany the code release as machine-readable
+CSV files.
+
+\subsection{MASE}
+For completeness we report MASE (per-series MAE scaled by in-sample
+naive MAE), the intermittent-demand literature's traditional point
+metric. It inherits the absolute-error pathology quantified in
+Section~\ref{sec:main-results}: the all-zero forecast attains the best
+MASE on Online Retail ($1.84$ vs.\ TSB $2.08$, \EBB{} $2.41$),
+Carparts, and RAF, and zero-leaning methods (TSB, IMAPA) lead among real
+forecasters. On Auto, \EBB{} ($0.889$) is second only to CrostonSBA
+($0.883$). Full table in the repository
+(\texttt{mase\_table.csv}). We treat MASE as descriptive, not
+decision-relevant, for the same reason as MAE.
+
+\subsection{Walk-forward artifacts}
+The complete point and probabilistic results are in
+Tables~\ref{tab:walkforward} and \ref{tab:wfprob}; released block-level
+artifacts retain the seven-day boundaries and every per-block prediction.
+
+\subsection{Neural baselines}
+\label{app:neural}
+
+Table~\ref{tab:neural} retains the earlier neural comparisons. Deep
+Renewal Processes (DRP) \citep{turkmen2019} are architecturally close to
+our occurrence--size decomposition, but the legacy subsample numbers are
+indicative only: we rebuilt the Python~3.8/MXNet~1.7 environment and
+launched the original code path, yet three configurations diverged to
+NaN between epochs 7 and 11 and failed during prediction. DeepAR and an
+RNN under prediction-only chaining reach lower MAE in one case but worse
+RMSE and RMSSE at both horizons. Neural decoding and a constant
+sufficient-statistic forecast are not timing-equivalent, so these rows
+should not support a broad efficiency ratio.
+
+Two newly executed reference points provide a cleaner, narrower check.
+DeepState---the published Amazon ISSM successor available in GluonTS,
+not a reproduction of \citet{seeger2016}---obtains mean SPL $1.0652$ on
+a 1{,}000-series Online Retail subset and $0.4608$ on full Carparts.
+Chronos-Bolt-small obtains $0.8448$ on an Online Retail 500-series subset,
+versus $0.8342$ for \EBB{} on exactly the same subset: a small $1.3\%$
+gap. Its Carparts result is only a reference point because the same-source
+Monash panel appears in the Chronos data repository and potential training
+contamination cannot be excluded. These subset results motivate an
+efficiency, determinism, and transparency claim, not a large foundation-
+model accuracy advantage.
+
+\begin{table}[t]
+\centering
+\caption{Neural comparisons on Online Retail. Top: probabilistic
+(unscaled pinball, 500-series subsample, fixed protocol). Bottom: point
+metrics under prediction-only chaining at two horizons.}
+\label{tab:neural}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcccccc}
+\toprule
+ & q10 & q25 & q50 & q75 & q90 & Time\\
+\midrule
+DeepRenewal & 0.358 & 0.895 & 1.790 & 2.684 & 2.941 & $\sim$20\,min\\
+Hierarchical EB & 0.387 & 0.914 & 1.772 & 2.390 & 2.186 & 1\,s\\
+\midrule
+ & \multicolumn{2}{c}{MAE} & \multicolumn{2}{c}{RMSE} & \multicolumn{2}{c}{RMSSE}\\
+ & $h{=}10$ & $h{=}100$ & $h{=}10$ & $h{=}100$ & $h{=}10$ & $h{=}100$\\
+\midrule
+RNN & 3.257 & 3.132 & 11.938 & 12.538 & 0.875 & 8.197\\
+DeepAR & 6.245 & 7.288 & 17.221 & 18.623 & 7.151 & 9.986\\
+Hierarchical EB & 4.639 & 4.495 & 11.284 & 11.733 & 0.855 & 8.170\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Far-tail quantiles on the sparsest panels}
+\label{app:fartail}
+
+Scaled pinball at $q\in\{0.95,0.975,0.99\}$ on the two panels where the
+standard levels discriminate weakly, under the identical fixed protocol
+(\EBB{} raw, $B{=}20$; iETS not re-run at these levels). The zero
+forecast's scaled pinball is \emph{linear} in $q$ (its pinball at level
+$q$ is $q\,\E[y/\mathrm{scale}]$), so the far tail is exactly where its
+apparent advantage must collapse; the question the table answers is who
+inherits the lead.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3.6pt}
+\begin{tabular}{lccc@{\hspace{10pt}}ccc}
+\toprule
+ & \multicolumn{3}{c}{Carparts} & \multicolumn{3}{c}{RAF}\\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+Model & q95 & q97.5 & q99 & q95 & q97.5 & q99\\
+\midrule
+CP-Croston & 0.413 & 0.290 & 0.168 & 0.488 & 0.537 & 0.526\\
+CP-SBA & 0.412 & 0.290 & 0.168 & 0.489 & 0.542 & 0.529\\
+CP-TSB & 0.374 & 0.263 & 0.160 & 0.506 & 0.601 & 0.552\\
+CP-ADIDA & 0.384 & 0.275 & 0.159 & 0.493 & 0.579 & 0.557\\
+CP-IMAPA & 0.378 & 0.270 & 0.156 & 0.493 & 0.581 & 0.564\\
+AutoARIMA & 0.385 & 0.332 & 0.301 & \best{0.460} & 0.395 & 0.356\\
+AutoTheta & 0.367 & 0.316 & 0.285 & 0.464 & 0.399 & 0.359\\
+Tweedie-GLM & 0.581 & 0.445 & 0.305 & 0.497 & 0.439 & 0.367\\
+TweedieGP & \best{0.355} & \best{0.222} & \best{0.128} & 0.462 & \best{0.352} & \secondbest{0.247}\\
+\midrule
+Zero & 0.710 & 0.729 & 0.740 & 0.507 & 0.520 & 0.529\\
+\midrule
+\EBB{} & \secondbest{0.365} & \secondbest{0.251} & \secondbest{0.144} & \secondbest{0.461} & \secondbest{0.364} & \best{0.246}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three readings follow. First, \textbf{the saturation breaks as expected}:
+on RAF the zero forecast, marginally ahead at $q\le0.9$, falls behind
+every intensity-bearing method from $q{=}0.95$ on, and on Carparts it is
+last by a factor of two. Second, \textbf{tail leadership is
+model-specific}: official TweedieGP wins all three Carparts cells, while
+\EBB{} is second in all three; on RAF, AutoARIMA wins q95, TweedieGP
+wins q97.5, and \EBB{} wins q99 by a near tie. Third, this table
+deliberately narrows the claim: \EBB{}'s most consistent advantage is
+aggregate SPL, not universal extreme-quantile dominance. The conformal
+wrappers still deteriorate in the RAF far tail, where their per-level
+calibration information is sparse.
+
+\subsection{Full-posterior inference on the same hierarchy}
+\label{app:mcmc}
+
+To separate the inference method from the model, we paired plug-in EB
+with a full-posterior sampler at each discount. Each pair uses the same
+single global pool, shared size-variance specification, discounted
+sufficient statistics, seed-controlled 500-series Online Retail subsample,
+evaluation span, and scoring code. The sampler uses
+Metropolis-within-Gibbs for the Beta hyperparameters, four deterministic
+chains of 4{,}000 sweeps, 2{,}000 burn-in iterations, and thinning by four.
+Both a stationary version ($w{=}1$) and a power-prior discounted version
+($w{=}0.98$) are tested. The richer \EBB{} arm runs its joint
+selection separately on this subsample and is
+reported only as context, not as an inference-method contrast.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+ & SPL mean & SPL q90 & MAE & RMSSE & sec.\\
+\midrule
+\EBB{} (incl.\ selection) & 0.7942 & 1.3682 & 5.6259 & 4.6712 & 86.4\\
+EB global, $w{=}1$ & 0.7919 & 1.3588 & 5.5504 & 4.6684 & 0.2\\
+Gibbs global, $w{=}1$ & 0.7919 & 1.3590 & 5.5890 & 4.6696 & 2.7\\
+EB global, $w{=}0.98$ & 0.7935 & 1.3658 & 5.4774 & 4.6694 & 0.2\\
+Gibbs global, $w{=}0.98$ & 0.7937 & 1.3665 & 5.5549 & 4.6734 & 2.7\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two readings. First, \emph{the empirical-Bayes approximation is not a
+distributional-accuracy bottleneck}: paired full-posterior inference changes
+mean SPL by $0.007\%/0.019\%$, q90 SPL by $0.018\%/0.048\%$, and RMSSE by
+$0.025\%/0.085\%$ at $w=1/0.98$. MAE is somewhat more sensitive but still
+changes only $0.70\%/1.42\%$. Second, forgetting helps MAE under both
+inference methods, so that finding is not an artifact of the EB plug-in.
+The maximum split-$\widehat R$ across $(\alpha,\beta,\mu_0,\tau^2,\sigma^2)$
+is $1.0021$, and the minimum effective sample size is $819$ of 2{,}000
+retained draws.
+What this experiment does \emph{not} measure: the richer external
+state-space samplers
+\citep{chapados2014,seeger2016} remain unrun (Limitations, item~6); this
+conjugate single-pool Gibbs is far cheaper than those models and is a
+control for the inference method, not a stand-in for them. The plug-in
+EB path retains bit-reproducibility and requires no convergence
+diagnostics, but at this scale raw speed does not separate the two.
+
+\subsection{Datasets}\label{app:datasets}
+Online Retail: UCI 352; returns/zero-price removed, 99.5\% quantity cap,
+daily aggregation densified with zeros. M5: Kaggle M5-Accuracy;
+seed-controlled 5{,}000-series sample. Both M5 protocols use a two-thirds
+initialization split; the learned mixture is selected at $w=0.95$ on all
+three audited seeds. Auto/RAF: gluon-ts
+\texttt{intermittent-datasets} branch. Carparts: Zenodo 4656022, series
+without missing values and with at least one zero (2{,}509). Monthly
+panels use the last-$h$ holdout of \citet{damato2025}.
+
+\end{document}

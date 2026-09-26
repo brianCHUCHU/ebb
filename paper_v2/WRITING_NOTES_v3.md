@@ -132,8 +132,8 @@
 
 ## 3.5 已完成：Writing Quality Check（academic-paper skill `/ars-revision`，2026-07-31 執行）
 
-已安裝 `imbad0202/academic-research-skills` 至 `~/.claude/skills/`（四 skill + shared）與
-`~/.claude/commands/`（16 個 `/ars-*` 指令）。**新 session 會自動載入，可直接用
+已安裝 `imbad0202/academic-research-skills`（四 skill + shared，含
+16 個 `/ars-*` 指令）。**新 session 會自動載入，可直接用
 `/ars-revision`、`/ars-reviewer` 等。** 授權 CC-BY-NC 4.0。
 
 2026-07-30 用該 skill 的 `references/writing_quality_check.md` 對 `main_v3.tex` 完成全文掃描

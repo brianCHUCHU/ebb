@@ -166,7 +166,13 @@ def _clip_occurrence_discount(discount: float) -> float:
     return float(np.clip(val, 1e-6, 1.0))
 
 
-def _clip_fit_discount(discount: float) -> float:
+def _clip_fit_discount(discount):
+    """Scalar discount in (0, 1]; a per-item Series/dict (uid -> w_i) is
+    clipped elementwise and returned as a Series (missing items default 1)."""
+    if isinstance(discount, (pd.Series, dict)):
+        ser = pd.Series(discount, dtype=float)
+        ser.index = ser.index.astype(str)
+        return ser.replace([np.inf, -np.inf], np.nan).fillna(1.0).clip(1e-6, 1.0)
     try:
         val = float(discount)
     except Exception:
@@ -180,6 +186,7 @@ def _compute_series_stats(
     train_df: pd.DataFrame,
     group_labels: Optional[pd.Series | Dict[str, str]] = None,
     fit_discount: float = 1.0,
+    occurrence_fit_discount: Optional[float] = None,
 ) -> pd.DataFrame:
     """Per-series sufficient statistics from the initialization window.
 
@@ -188,8 +195,15 @@ def _compute_series_stats(
     receives weight ``fit_discount ** d``. The resulting weighted pseudo-counts
     give TSB-HB temporal forgetting (obsolescence tracking) while keeping every
     downstream posterior update closed form.
+
+    ``occurrence_fit_discount`` (optional) gives the occurrence counts
+    (``n_obs``, ``s_obs``) their own recency weight while the size statistics
+    keep ``fit_discount``; ``None`` leaves the single-rate path untouched.
     """
     fit_discount = _clip_fit_discount(fit_discount)
+    two_rate = occurrence_fit_discount is not None
+    if two_rate:
+        occurrence_fit_discount = float(_clip_fit_discount(float(occurrence_fit_discount)))
     cols = ["unique_id", "ds", "y"]
     if LAG_COLUMN in train_df.columns:
         cols = cols + [LAG_COLUMN]
@@ -199,7 +213,9 @@ def _compute_series_stats(
     pos_mask = data["y"] > 0
     data.loc[pos_mask, "log_y"] = np.log(data.loc[pos_mask, "y"].astype(float))
 
-    if fit_discount < 1.0:
+    per_item = isinstance(fit_discount, pd.Series)
+    lag_from_origin = None
+    if per_item or fit_discount < 1.0 or two_rate:
         data = data.sort_values(["unique_id", "ds"], kind="stable")
         if LAG_COLUMN in data.columns:
             # Frame is a sub-sample of a longer window: use the lags recorded
@@ -209,17 +225,29 @@ def _compute_series_stats(
             t_idx = data.groupby("unique_id", sort=False).cumcount()
             series_len = data.groupby("unique_id", sort=False)["y"].transform("size")
             lag_from_origin = (series_len - 1 - t_idx).to_numpy(dtype=float)
-        data["w"] = np.power(fit_discount, lag_from_origin)
+    if per_item or fit_discount < 1.0:
+        if per_item:
+            w_item = data["unique_id"].astype(str).map(fit_discount).fillna(1.0).to_numpy(dtype=float)
+            data["w"] = np.power(w_item, lag_from_origin)
+        else:
+            data["w"] = np.power(fit_discount, lag_from_origin)
     else:
         data["w"] = 1.0
 
     data["w_occ"] = data["w"] * data["occ"]
     data["w_log"] = data["w"] * data["log_y"].fillna(0.0) * data["occ"]
     data["w_sq_log"] = data["w"] * np.square(data["log_y"].fillna(0.0)) * data["occ"]
+    if two_rate:
+        data["w_o"] = np.power(occurrence_fit_discount, lag_from_origin)
+        data["w_o_occ"] = data["w_o"] * data["occ"]
 
     g = data.groupby("unique_id", sort=False)
-    n_obs = g["w"].sum().astype(float)
-    s_obs = g["w_occ"].sum().astype(float)
+    if two_rate:
+        n_obs = g["w_o"].sum().astype(float)
+        s_obs = g["w_o_occ"].sum().astype(float)
+    else:
+        n_obs = g["w"].sum().astype(float)
+        s_obs = g["w_occ"].sum().astype(float)
     n_pos = g["w_occ"].sum().astype(float)
     sum_log = g["w_log"].sum().astype(float)
     sum_sq_log = g["w_sq_log"].sum().astype(float)
@@ -717,6 +745,7 @@ def fit_tsb_hb(
     hyper_train_df: Optional[pd.DataFrame] = None,
     hyper_shrink: str = "off",
     fixed_group_hypers: Optional[dict[str, pd.Series]] = None,
+    occurrence_fit_discount: Optional[float] = None,
 ) -> TSBHBParams:
     """Fit TSB-HB with optional group-aware priors and hyperparameter bootstrap.
 
@@ -733,12 +762,14 @@ def fit_tsb_hb(
       partitions from collapsing their own variance components.
     """
     fit_discount = _clip_fit_discount(fit_discount)
-    stats = _compute_series_stats(train_df, group_labels=group_labels, fit_discount=fit_discount)
+    stats = _compute_series_stats(train_df, group_labels=group_labels, fit_discount=fit_discount,
+                                  occurrence_fit_discount=occurrence_fit_discount)
     if hyper_train_df is None:
         hyper_stats = stats
     else:
         hyper_stats = _compute_series_stats(
-            hyper_train_df, group_labels=group_labels, fit_discount=fit_discount
+            hyper_train_df, group_labels=group_labels, fit_discount=fit_discount,
+            occurrence_fit_discount=occurrence_fit_discount,
         )
     (
         alpha_by_group,
@@ -1079,6 +1110,7 @@ def initialize_online_tsb_hb(
     item_variance_mode: str = "group",
     item_variance_shrink_strength: float = 20.0,
     fit_discount: float = 1.0,
+    occurrence_fit_discount: Optional[float] = None,
 ) -> TSBHBOnlineState:
     occ_discount = _clip_occurrence_discount(occurrence_discount)
     params = fit_tsb_hb(
@@ -1096,6 +1128,7 @@ def initialize_online_tsb_hb(
         item_variance_mode=item_variance_mode,
         item_variance_shrink_strength=item_variance_shrink_strength,
         fit_discount=fit_discount,
+        occurrence_fit_discount=occurrence_fit_discount,
     )
     return TSBHBOnlineState(
         n_obs=params.n_obs.copy(),

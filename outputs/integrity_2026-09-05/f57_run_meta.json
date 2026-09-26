@@ -1,0 +1,12 @@
+{
+  "task": "f57_significance_rescore",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "seed": 42,
+  "scoring": "current implementation; per-quantile per-series mean pinball / _series_naive_scale, mean over series, mean over quantiles",
+  "zero_excluded_from_tests": true,
+  "wall_clock_total_s": 178.0
+}

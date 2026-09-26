@@ -1,0 +1,19 @@
+method,wall_clock_total_s,s_per_series,includes_selection,hardware,runtime,gpu_used,bit_reproducible,n_series,notes
+EBB,46.7,0.019,True,CPU,Python,False,Yes,2509,"24-candidate joint selection (selected global, w=0.9) + final EB fit (B=20) + point + 5-quantile prediction; single process || [1] all rows: one machine, one session; absolute values not comparable across platforms. [2] Damato et al. (2025) report 0.24 s/series for TweedieGP on Carparts (M3 MacBook Pro); on this machine the released defaults give 1.89 s (single thread, median of 12 series) and the paper-stated 100-iteration budget gives 0.97 s; the released code doubles the iteration cap for Tweedie likelihoods when T<=500 (train_longer). [3] on M5 roughly half of TweedieGP's per-series time is the 50,000-sample predictive draw over the 647-step external span (h=28 in the original protocol): protocol difference, not method cost."
+TSB-tuned,3.8,0.002,True,CPU,Python,False,No,2509,25-candidate grid on the identical 80/20 chronological split + refit + point prediction (point-only control; no predictive distribution)
+AutoARIMA,56.2,0.022,False,CPU,Python,False,No,2509,shared StatsForecast call timed once and split across the two models
+AutoTheta,56.2,0.022,False,CPU,Python,False,No,2509,shared StatsForecast call timed once and split across the two models
+CP-Croston,13.3,0.005,False,CPU,Python,False,No,2509,"five wrappers share one residual-pool fit; call timed once, split by five"
+CP-SBA,13.3,0.005,False,CPU,Python,False,No,2509,"five wrappers share one residual-pool fit; call timed once, split by five"
+CP-TSB,13.3,0.005,False,CPU,Python,False,No,2509,"five wrappers share one residual-pool fit; call timed once, split by five"
+CP-ADIDA,13.3,0.005,False,CPU,Python,False,No,2509,"five wrappers share one residual-pool fit; call timed once, split by five"
+CP-IMAPA,13.3,0.005,False,CPU,Python,False,No,2509,"five wrappers share one residual-pool fit; call timed once, split by five"
+Tweedie-GLM,37.3,0.015,False,CPU,Python,False,No,2509,"per-series autoregressive GLM, 6 lags (monthly)"
+iETS,55.3,0.022,False,CPU,R,False,No,2509,"smooth::adam via Rscript, 20 parallel jobs, 10 s/series cap"
+TweedieGP,302.1,0.12,False,CPU,Python/torch,False,No,2509,"official implementation, released defaults (train_longer active), 12 worker processes; per-series wall median 1.51 s (single thread); zero-window fallbacks 6, failed 0"
+Zero,0.0,0.0,False,CPU,Python,False,Yes,2509,constant zero forecast
+DeepState,192.0,0.077,False,CPU,Python/MXNet,False,No,2509,"recorded from t4_run_meta_carparts.json (train 163 s + predict); GluonTS DeepState, full Carparts, not re-timed this session"
+Chronos-Bolt-small,8.3,0.017,False,CPU,Python/torch,False,No,500,"recorded from t7_run_meta_carparts500.json; zero-shot inference, 500-series subsample, not re-timed this session"
+DRP (Deep Renewal),1200.0,2.4,False,CPU,Python/MXNet,False,No,500,~20 min recorded for a 500-series Online Retail subsample (legacy run); no Carparts run exists; training diverges on rebuild (see FAILURES)
+TweedieGP [Online Retail],1730.1,0.474,False,CPU,Python/torch,False,No,3649,"official implementation, released defaults (train_longer active), 12 worker processes; per-series wall median 5.09 s (single thread); zero-window fallbacks 0, failed 0"
+TweedieGP [M5],7617.9,1.524,False,CPU,Python/torch,False,No,5000,"official implementation, released defaults (train_longer active), 12 worker processes; per-series wall median 17.29 s (single thread); zero-window fallbacks 293, failed 0"

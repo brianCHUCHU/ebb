@@ -1,0 +1,19 @@
+{
+  "task": "t2_leverage_corrected",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "pandas": "2.3.1",
+  "w_star": {
+    "online_retail": 0.95,
+    "m5": 0.95,
+    "auto": 0.99,
+    "carparts": 0.9,
+    "raf": 0.997
+  },
+  "diagnostic_source": "scripts/analysis/leverage_dual_lambda.py (imported unchanged)",
+  "seed": {
+    "m5_sample": 42
+  },
+  "wall_clock_total_s": 129.0
+}

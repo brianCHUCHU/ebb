@@ -1,0 +1,11 @@
+{
+  "task": "t4_gain_reconciliation",
+  "commit": "f561b717c2602dcc072cfe9b2423caca2b722a3e",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy": "2.2.6",
+  "pandas": "2.3.1",
+  "inputs": "12 stored selection surfaces (5 legacy select, 5 M5 seed variants, 5 t1 corrected)",
+  "tolerance_pp": 0.03,
+  "conclusion": "draft (0.54,1.4) pair not reproducible on any single surface; 0.75320/0.74434 are OR legacy global rows; within-surface corrected M5 @ w*=0.95: refinement +0.58%, forgetting 8.95-9.46%"
+}

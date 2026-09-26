@@ -219,6 +219,16 @@ def run_arms(train, test, true_labels, truth_path, hyp_df, sigma2, w) -> list[di
         p, mu, s2 = params_to_triple(params, test)
         rec = {"arm": name}
         rec.update(score_predictive(test, p, mu, s2))
+        # Size-block credibility under this arm's fitted pool, mirroring
+        # scripts/analysis/leverage_dual_lambda.py: lambda_i = n_i^+/(n_i^+ + kappa_g)
+        # with discounted effective positive counts. Post-fit computation only;
+        # consumes no randomness, so the seeded panels are unchanged.
+        g = params.group_labels.astype(str)
+        kappa = (params.size_sigma_sq_by_group / params.size_tau_sq_by_group).reindex(g.values)
+        kappa.index = g.index
+        lam_size = params.n_pos / (params.n_pos + kappa)
+        rec["median_lambda_size"] = float(lam_size.median())
+        rec["median_n_pos_eff"] = float(params.n_pos.median())
         if labels is not None:
             est_mu = params.size_global_mean_by_group.reindex(hyp_df.index)
             est_tau = params.size_tau_sq_by_group.reindex(hyp_df.index)

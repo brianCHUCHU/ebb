@@ -1,0 +1,22 @@
+{
+  "task": "o1_occdisc_eval",
+  "design": "docs/DESIGN_occurrence_discount.md",
+  "grid": [
+    "tied",
+    "0.999",
+    "0.997",
+    "0.995",
+    "0.99",
+    "0.98",
+    "0.95",
+    "0.9",
+    "0.8",
+    "0.7"
+  ],
+  "selection": "80/20 head/tail of the initialization window; scaled pinball q in {.5,.75,.9}; tied in grid",
+  "scalar_path_hash_before_after": "1605a3ae... identical (outputs/2026-09-07/scalar_hash_{before,after}.txt)",
+  "wall_clock_total_s": 1806.6,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

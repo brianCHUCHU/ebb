@@ -1,0 +1,8 @@
+run,spl_mean,spl_q90,coverage80,aiw80,mae,rmse,rmsse
+or_prob_taxonomy_095,0.8846,1.5254,0.895,9.43,,,
+or_prob_mixture_095,0.8869,1.5343,0.897,10.69,,,
+or_point_taxonomy_095,,,,,5.5624,17.8421,4.7897
+or_point_mixture_095,,,,,5.6925,17.8765,4.7902
+auto_point_mixture_099,,,,,3.3293,9.4058,1.1473
+m5_prob_seed43_mixture_095,1.7424,2.6132,0.841,2.62,,,
+m5_prob_seed44_mixture_095,1.8371,2.8016,0.85,2.84,,,

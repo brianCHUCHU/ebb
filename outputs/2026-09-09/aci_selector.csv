@@ -1,0 +1,6 @@
+panel,tail_blocks,tail_plain,tail_aci,tail_gain_pct,apply_aci,ext_EBB_mean,ext_ACI_mean,ext_selected_mean,ext_selected_q90,ext_best_of_two,correct
+carparts,9,0.89747,0.90614,-0.97,False,0.3145,0.3128,0.3145,0.4578,0.3128,False
+auto,3,0.3313,0.33039,0.28,True,0.291,0.2901,0.2901,0.256,0.2901,True
+raf,14,0.98459,1.00813,-2.39,False,0.2681,0.2743,0.2681,0.4864,0.2681,True
+online_retail,4,0.73816,0.79666,-7.93,False,0.854,0.9082,0.854,1.4002,0.854,True
+m5,37,1.56855,1.44574,7.83,True,1.4851,1.3785,1.3785,1.6438,1.3785,True

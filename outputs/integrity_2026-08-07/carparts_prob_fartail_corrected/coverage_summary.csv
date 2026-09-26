@@ -1,0 +1,2 @@
+protocol,model,n_obs,Coverage@50,AIW@50,CoverageGap@50,Coverage@80,AIW@80,CoverageGap@80
+fixed,TSB-HB,15054,,,,,,

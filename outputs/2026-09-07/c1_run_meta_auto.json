@@ -1,0 +1,20 @@
+{
+  "task": "c1_coldstart_auto",
+  "panel": "auto",
+  "design": "docs/DESIGN_coldstart.md",
+  "levels": [
+    6,
+    12,
+    "full"
+  ],
+  "ebb_config": [
+    "global",
+    0.99
+  ],
+  "scale": "naive scale from the FULL initialization window",
+  "failures": [],
+  "wall_clock_total_s": 1116.9,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.5",
+  "seed": 42
+}

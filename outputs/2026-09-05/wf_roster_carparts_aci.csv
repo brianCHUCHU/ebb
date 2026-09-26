@@ -1,0 +1,11 @@
+dataset,protocol,model,metric,quantile,value
+carparts,walk_forward,ACI-ADIDA,scaled_pinball,0.1,0.08820208960488746
+carparts,walk_forward,ACI-ADIDA,scaled_pinball,0.25,0.22136977388698323
+carparts,walk_forward,ACI-ADIDA,scaled_pinball,0.5,0.40546781398546855
+carparts,walk_forward,ACI-ADIDA,scaled_pinball,0.75,0.5166237554751425
+carparts,walk_forward,ACI-ADIDA,scaled_pinball,0.9,0.47673410910494224
+carparts,walk_forward,ACI-ADIDA,scaled_pinball,mean,0.3416795084114848
+carparts,walk_forward,ACI-ADIDA,coverage80,,0.8702006111332536
+carparts,walk_forward,ACI-ADIDA,coverage80_positive,,0.6043492372606296
+carparts,walk_forward,ACI-ADIDA,aiw80,,1.379921334365856
+carparts,walk_forward,ACI-ADIDA,wall_clock_s,,7.4358575999503955

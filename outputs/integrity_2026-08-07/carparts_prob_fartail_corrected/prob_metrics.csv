@@ -1,0 +1,2 @@
+protocol,model,n_obs,Coverage@50,AIW@50,CoverageGap@50,Coverage@80,AIW@80,CoverageGap@80,pinball_mean,scaled_pinball_mean,n_obs_pos,Coverage@50_pos,AIW@50_pos,CoverageGap@50_pos,Coverage@80_pos,AIW@80_pos,CoverageGap@80_pos,pinball_mean_pos,GoalScore@80,GoalScore@80_pos
+fixed,TSB-HB,15054,,,,,,,0.16499538304847364,0.35213771803175714,3081,,,,,,,0.5209899927432866,,
