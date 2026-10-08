@@ -1,0 +1,6 @@
+panel,structure,discount,spl_mean,spl_q90,coverage80,aiw80,point_mae,point_rmsse
+online_retail,global,0.95,0.8849,1.5268,0.892,9.25,5.5325,4.7901
+m5,mixture,0.95,1.6707,2.4758,0.846,2.81,1.2032,2.2938
+auto,global,0.99,0.2937,0.2599,0.907,9.21,3.2145,1.1374
+carparts,global,0.90,0.3229,0.4817,0.931,1.47,0.5726,1.012
+raf,mixture,0.997,0.268,0.4856,0.921,0.94,2.3874,1.6245

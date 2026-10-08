@@ -9,7 +9,7 @@ import pandas as pd
 from utils import set_seed, default_data_file, default_out_dir
 from data_loading import load_online_retail, preprocess_online_retail, train_eval_split_fixed_origin
 from models.baselines import fit_predict_baselines
-from models.tsb_hb import fit_tsb_hb
+from models.eb_hurdle import fit_eb_hurdle
 from metrics import me, mae, rmse, rmsse
 
 
@@ -28,14 +28,14 @@ def main() -> None:
     df = preprocess_online_retail(df_raw)
     init_set, eval_set = train_eval_split_fixed_origin(df, init_ratio=1 / 3, min_len=30)
 
-    # Reference performance for TSB-HB-LogNormal
-    params = fit_tsb_hb(init_set)
+    # Reference performance for EB-Hurdle
+    params = fit_eb_hurdle(init_set)
     size_post_mean = np.exp(params.shrunk_mean_log + params.sigma_sq_process / 2.0)
     forecast_hb = (params.p_posterior * size_post_mean).fillna(0)
-    eva_ref = eval_set[["unique_id", "ds", "y"]].merge(forecast_hb.rename("TSB-HB-LogNormal"), on="unique_id", how="left")
-    eva_ref["TSB-HB-LogNormal"].fillna(0, inplace=True)
-    ref_mae = mae(eva_ref["y"].values, eva_ref["TSB-HB-LogNormal"].values)
-    ref_rmse = rmse(eva_ref["y"].values, eva_ref["TSB-HB-LogNormal"].values)
+    eva_ref = eval_set[["unique_id", "ds", "y"]].merge(forecast_hb.rename("EB-Hurdle"), on="unique_id", how="left")
+    eva_ref["EB-Hurdle"].fillna(0, inplace=True)
+    ref_mae = mae(eva_ref["y"].values, eva_ref["EB-Hurdle"].values)
+    ref_rmse = rmse(eva_ref["y"].values, eva_ref["EB-Hurdle"].values)
 
     # Grid for TSB
     alphas = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
@@ -71,4 +71,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

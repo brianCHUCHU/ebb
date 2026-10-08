@@ -1,5 +1,36 @@
 from __future__ import annotations
 
+from pathlib import Path as _Path
+
+
+def load_generic_long(path) -> "pd.DataFrame":
+    """Load a pre-converted long-format panel: columns [unique_id, ds, y]."""
+    import pandas as pd
+
+    df = pd.read_csv(path)
+    need = {"unique_id", "ds", "y"}
+    if not need.issubset(df.columns):
+        raise ValueError(f"{path} must contain columns {need}")
+    df["ds"] = pd.to_datetime(df["ds"])
+    df["y"] = df["y"].astype(float)
+    return df.sort_values(["unique_id", "ds"]).reset_index(drop=True)
+
+
+def train_eval_split_last_h(df, h: int):
+    """Per-series split: last ``h`` observations for evaluation, rest for init.
+
+    Matches the fixed-horizon holdout protocol of Damato et al. (IJF 2025).
+    """
+    import pandas as pd
+
+    tmp = df.sort_values(["unique_id", "ds"]).copy()
+    tmp["t"] = tmp.groupby("unique_id").cumcount()
+    tmp["L"] = tmp.groupby("unique_id")["t"].transform("max") + 1
+    tmp = tmp[tmp["L"] > h].copy()
+    eval_mask = tmp["t"] >= (tmp["L"] - h)
+    cols = ["unique_id", "ds", "y"]
+    return tmp.loc[~eval_mask, cols].copy(), tmp.loc[eval_mask, cols].copy()
+
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -87,8 +118,8 @@ def convert_m5_wide_to_long(sales_wide_path: Path, output_path: Optional[Path] =
     elif 'item_id' in df_long.columns and 'store_id' in df_long.columns:
         df_long['series_id'] = df_long['item_id'] + '_' + df_long['store_id']
     
-    # Select and order columns
-    output_cols = ['series_id', 'item_id', 'store_id', 'd', 'sales']
+    # Select and order columns (keep hierarchy metadata when available)
+    output_cols = ['series_id', 'item_id', 'dept_id', 'cat_id', 'store_id', 'state_id', 'd', 'sales']
     output_cols = [c for c in output_cols if c in df_long.columns]
     df_long = df_long[output_cols].copy()
     
@@ -156,6 +187,7 @@ def preprocess_m5(
     df = df.dropna(subset=["ds"]).copy()
     df["ds"] = pd.to_datetime(df["ds"])
 
-    df = df[["unique_id", "ds", "y"]].sort_values(["unique_id", "ds"]).reset_index(drop=True)
+    meta_cols = [c for c in ["item_id", "dept_id", "cat_id", "store_id", "state_id"] if c in df.columns]
+    keep_cols = ["unique_id", "ds", "y"] + meta_cols
+    df = df[keep_cols].sort_values(["unique_id", "ds"]).reset_index(drop=True)
     return df
-

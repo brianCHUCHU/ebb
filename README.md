@@ -1,126 +1,126 @@
-# TSB-HB
+# EBB
 
-Reference implementation for the TSB-HB (Teunter–Syntetos–Babai with hierarchical Bayes shrinkage) demand-forecasting experiments. The project uses a flattened `src/` layout: helper modules sit at the top level (`data_loading.py`, `metrics.py`, `plotting.py`, `utils.py`) alongside subpackages (`models/`, `experiments/`, `tools/`). Packaging metadata lives under `src/tsbhb.egg-info/` because the distribution name remains `tsbhb`.
+Research code for **When Does Pooling Pay? Credibility and Resolution under
+Forgetting in Intermittent-Demand Forecasting**.
 
-## Quick start
+**Authors:** [Zong-Han Bai](https://github.com/HummerQAQ) and
+[Po-Yen Chu](https://github.com/brianCHUCHU). The two authors contributed equally.
 
-1. **Install uv** (once per machine):
+## Paper
 
-	 ```bash
-	 curl -LsSf https://astral.sh/uv/install.sh | sh
-	 ```
+- [arXiv:2511.12749v3](https://arxiv.org/abs/2511.12749v3)
+- [DOI: 10.48550/arXiv.2511.12749](https://doi.org/10.48550/arXiv.2511.12749)
 
-2. **Create the project environment** (Python 3.10) and install the package plus pinned dependencies. A `.venv/` directory will be created automatically next to this README:
+EBB is the forecaster described in the revised work, which develops the earlier
+TSB-HB work around joint pooling and forgetting. Internal modules retain the
+names `eb_hurdle` and `ebhurdle`, and some output columns use `EB-Hurdle`.
+`EBB` / `ebb` denotes that model with the selected pooling structure and discount.
 
-	 ```bash
-	 uv sync
-	 ```
+## Installation
 
-3. *(Optional)* **Enable the DeepAR extras** (required only for `run_deepar.py`):
+Use **Python 3.10** (the supported range in `pyproject.toml`) and
+[uv](https://docs.astral.sh/uv/getting-started/installation/):
 
-	 ```bash
-	 uv sync --extra deepar
-	 ```
+```bash
+uv sync --extra test
+export ARS_SF_NJOBS=1
+uv run python -m experiments.run_point --help
+uv run python -m experiments.run_prob --help
+```
 
-4. **Run any script** directly through uv (no manual activation needed):
+The distribution name is `ebb`; existing Python module names are retained.
+The main environment uses the pinned Python dependencies in `pyproject.toml`.
+The tests additionally require pytest and SymPy:
 
-	 ```bash
-	 uv run python -m experiments.run_point --help
-	 ```
+```bash
+uv run python -m pytest tests/test_determinism.py tests/test_theory_symbolic.py
+```
 
-To work inside the environment interactively, activate the virtualenv created in `.venv/` (`source .venv/bin/activate` on macOS/Linux or `.venv\Scripts\activate` on Windows). With the flattened layout, you can import modules directly (e.g. `import data_loading`, `from models.tsb_hb import fit_tsb_hb`).
+TweedieGP uses its authors' released implementation in a separate environment
+and is not redistributed here. The DeepAR integrity workflow uses a separate
+GluonTS 0.11.12 / MXNet 1.7 environment. iETS scripts require R and its forecasting
+packages; some archived runners contain a Windows R executable path that must
+be explicitly configured for the local installation. These separate environments
+are required for those baselines, rather than substitutes in the main environment.
 
 ## Data
 
-### Online Retail Dataset
+All five panels use public data, downloaded separately into `data/`:
 
-Download the Online Retail Dataset from [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/352/online+retail)
+- **Online Retail:** [UCI dataset](https://archive.ics.uci.edu/dataset/352/online+retail).
+- **M5:** [competition files](https://www.kaggle.com/c/m5-forecasting-accuracy/data),
+  including sales and calendar files. `preprocess_m5` draws the seed-42 sample
+  of 5,000 series.
+- **Auto, Carparts, RAF:** monthly panels distributed with the TweedieGP work;
+  convert them to long format using `src/tools/convert_intermittent_datasets.py`.
 
-- Place the data at `data/online_retail.csv`. The loader also accepts the legacy name `Online_Retail.csv`.
+Raw datasets, full prediction archives, external baseline implementations and
+internal design notes are not included. Input requirements and run settings are
+specified in the individual scripts.
 
-### M5 Dataset
+## Repository layout
 
-To run M5 experiments, download the M5 dataset from [Kaggle M5 Forecasting Competition](https://www.kaggle.com/c/m5-forecasting-accuracy/data):
+- `src/models/eb_hurdle.py`: hierarchical empirical-Bayes hurdle model,
+  discounted sufficient statistics, joint selection and online updates.
+- `src/models/mixture_pooling.py`: learned partition using an EM mixture of priors
+  and BIC.
+- `src/models/conformal.py`, `baselines.py`, and other model modules: comparators.
+- `src/experiments/`: fixed-origin and walk-forward drivers and scoring.
+- `scripts/integrity/`, `scripts/rebuild/`, `scripts/analysis/`: experiment,
+  rebuilding and reporting scripts.
+- `results/`: small, saved result files grouped by topic.
+- `tests/`: symbolic and determinism checks.
 
-1. Download `sales_train_evaluation.csv` (or `sales_train_validation.csv`)
-2. Download `calendar.csv`
-3. Place both files in the `data/` directory
+## Reproduction boundaries
 
-The loader automatically detects the wide format and converts it on the fly—no preprocessing required. Your `data/` directory should look like:
+`results/` preserves the supplied result CSVs. Each experiment script writes to
+its configured folder under `outputs/`; the result CSVs are selected copies,
+not the full intermediate output archive. Some reporting scripts require earlier
+run outputs or manuscript source folders that are not included. Run their
+prerequisite experiments and provide the required inputs before using them;
+installing the package alone does not reproduce every table and figure.
 
-```bash
-data/
-	├── online_retail.csv    # or Online_Retail.csv
-	├── sales_train_evaluation.csv  # M5 wide format (auto-converted)
-	└── calendar.csv                # M5 calendar metadata
+Run-folder names use the neutral prefixes `outputs/paper_runs/`,
+`outputs/paper_rebuild/`, and `paper_v2/v*_paper*/`. If using existing local
+artifacts, place them at the paths specified by each script. The migration
+preserves numerical code and results while renaming these path strings.
+
+## Paper item -> script -> result file
+| Paper item | Script | Result file |
+|---|---|---|
+| Selection (24 candidates), credibility by panel | `scripts/integrity/t1_leakage_safe_selection.py` | `results/selection/` |
+| Table 1, fixed origin | `scripts/integrity/p0_ebb_external_corrected.py`, `f57_significance_rescore.py` | `results/fixed_origin/rescored_tab_prob.csv`, `ebb_corrected_rows.csv` |
+| Table 1, walk-forward | `f1_wf_ebb_corrected.py`, `w2_wf_monthly_roster.py`, `h4_m5_wf_plan_c.py`, `w1_wf_tweediegp.py`, `w8_wf_aci_ebb.py`, `a1_aci_selector.py`, `w3_assemble_wf_tables.py` | `results/walk_forward/wf_all_panels_wide.csv`, `wf_ebb_corrected.csv` |
+| Table 1, layout | `scripts/integrity/v8_tab_main.py` | (LaTeX) |
+| DeepAR | `d1_deepar_export.py`, `d2_deepar_runner.py` (GluonTS 0.11.12 / MXNet 1.7 environment), `d3_deepar_score.py`, `d5_deepar_paired_all.py`, `d6_deepar_tex.py` | `results/deepar/` |
+| Paired tests | `f57_significance_rescore.py`, `w9_wf_significance.py` | `results/fixed_origin/spl_significance_corrected.csv`, `results/walk_forward/spl_significance_wf.csv` |
+| Short-history experiment | `c1_coldstart.py`, `c2_coldstart_report.py` | `results/short_history/coldstart_wide.csv`, `coldstart_all.csv` |
+| Prior on / off, by block | `c3_coldstart_nopool.py`, `c5_coldstart_blocks.py`, `c4_coldstart_nopool_tex.py` | `results/short_history/coldstart_nopool_wide.csv`, `coldstart_blocks_wide.csv` |
+| Controlled surface | `s1b_separation_surface_v2.py`, `s2_real_separation.py`, `s3_separation_report.py` | `results/surface/` |
+| Figure with both panels; appendix figures on the prior gain and on DeepAR | `scripts/integrity/v8_figs.py` | (figures), `results/deepar/deepar_vs_credibility.csv` |
+| Pre-fit screen | `r1_room_synthetic.py` ... `r5_room_rows.py`, `room_features.py` | (regenerated; seeds in the scripts) |
+| No-pooling candidate | `t2_selection_with_none.py`, `t3_or_none_walkforward.py`, `t4_none_candidate_tex.py` | `results/none_candidate/` |
+| Selection weighting check | `t5_selection_weighting_check.py` | `results/none_candidate/selection_weighting_check.csv` |
+| Appendix point figures | `h5_point_figs_audited.py` | `results/fixed_origin/point_figs_audited_check.csv` |
+
+Each script writes its output to a run folder under `outputs/`, named in the script; the files
+under `results/` are copies of those outputs, grouped by topic.
+EBB is deterministic given the data: rerunning a script reproduces its file to numerical precision.
+
+## Citation
+
+See `CITATION.bib` for the citation below.
+
+```bibtex
+@misc{bai2025ebb,
+  title = {When Does Pooling Pay? Credibility and Resolution under
+           Forgetting in Intermittent-Demand Forecasting},
+  author = {Zong-Han Bai and Po-Yen Chu},
+  year = {2025},
+  eprint = {2511.12749},
+  archivePrefix = {arXiv},
+  primaryClass = {stat.ML},
+  url = {https://arxiv.org/abs/2511.12749v3},
+  note = {Version 3}
+}
 ```
-
-**Optional caching:** If you prefer to materialise the long-format file once (to speed up repeated experiments), use the in-package helper:
-
-```bash
-uv run python -m tools.convert_m5_to_long \
-		--input data/sales_train_evaluation.csv \
-		--output data/m5_evaluation_long.csv
-```
-
-You can then pass the cached file explicitly with `--m5-sales data/m5_evaluation_long.csv` when invoking scripts.
-
-## Running experiments
-
-Each experiment script lives under `src/experiments/` and can be invoked with uv. Common flags supported by most scripts:
-
-- `--data`: path to the primary dataset (defaults to `data/online_retail.csv`).
-- `--out`: destination directory for metrics/plots (defaults to `outputs/`).
-- `--seed`: random seed for reproducibility (default `42`).
-
-Generic invocation pattern:
-
-```bash
-uv run python -m experiments.<script_name> [options]
-```
-
-### Script catalog
-
-- `run_point.py`
-	- **Purpose:** Fits the TSB-HB model and a suite of StatsForecast baselines for point forecasts.
-	- **Datasets:** Online Retail (default) and M5 via `--dataset m5`.
-	- **Highlights:** Generates `point_metrics.csv`, shrinkage plots (`fig_shrink_p.png`, `fig_shrink_size.png`), and `point_metrics_m5.csv` when running on M5.
-- `run_prob.py`
-	- **Purpose:** Produces probabilistic forecasts (quantiles) for TSB-HB and AutoARIMA/AutoTheta baselines.
-	- **Datasets:** Online Retail only (M5 support not implemented).
-	- **Outputs:** `prob_quantiles.csv`, `prob_pinball.csv`, and `probabilistic_forecast_pinball_results.csv` in the chosen `--out` directory.
-- `run_grid.py`
-	- **Purpose:** Sweeps across `(alpha_d, alpha_p)` combinations for the TSB baseline to compare against the TSB-HB reference.
-	- **Datasets:** Online Retail only.
-	- **Outputs:** `grid_summary.csv` summarising ME/MAE/RMSE/RMSSE for each grid point.
-- `run_ablation.py`
-	- **Purpose:** Compares different shrinkage/likelihood variants (HB LogNormal, MLE LogNormal, HB Gamma) to quantify each modelling choice.
-	- **Datasets:** Online Retail only.
-	- **Outputs:** `ablation_metrics.csv` with ME/MAE/RMSE/RMSSE per variant.
-- `run_coverage_pit.py`
-	- **Purpose:** Evaluates interval coverage and probability integral transform statistics for probabilistic forecasts.
-	- **Datasets:** Online Retail only.
-	- **Outputs:** `coverage_summary.csv` (coverage & interval widths) and `pit_values.csv` for histogram diagnostics.
-- `run_deepar.py`
-	- **Purpose:** Optional neural benchmark using `neuralforecast`’s AutoDeepAR across configurable horizons.
-	- **Datasets:** Online Retail only (subset sampling controlled via CLI flags).
-	- **Requirements:** Install extras via `uv sync --extra deepar`. Produces `multi_horizon_comparison_results.csv` with ME/MAE/RMSE/RMSSE per horizon and model.
-
-## Outputs
-
-By default, each experiment writes results, diagnostics, and plots into `outputs/`. Clean the directory between runs if you need a fresh slate, or override `--out` with a dedicated subdirectory for reproducibility.
-
-## Reference
-
-1. Azul Garza, Max Mergenthaler Canseco, Cristian Challú, & Kin G. Olivares.  
-   **StatsForecast: Lightning fast forecasting with statistical and econometric models.**  
-   PyCon Salt Lake City, Utah, US, 2022.  
-   [https://github.com/Nixtla/statsforecast](https://github.com/Nixtla/statsforecast)
-
-2. Addison Howard, inversion, Spyros Makridakis, & Vangelis.  
-   **M5 Forecasting – Accuracy.** Kaggle, 2020.  
-   [https://kaggle.com/competitions/m5-forecasting-accuracy](https://kaggle.com/competitions/m5-forecasting-accuracy)
-
-3. Daqing Chen.  
-   **Online Retail.** UCI Machine Learning Repository, 2015.  
-   DOI: [10.24432/C5BW33](https://doi.org/10.24432/C5BW33)

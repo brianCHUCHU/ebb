@@ -17,7 +17,7 @@ def set_seed(seed: int = 42) -> None:
 def find_repo_root(start: Optional[Path] = None) -> Path:
     """Find project root by walking up until `pyproject.toml` is found.
 
-    Fallback: use 3 parents up from this file (src/tsbhb/...).
+    Fallback: use 3 parents up from this file (src/ebhurdle/...).
     """
     if start is None:
         start = Path(__file__).resolve()
