@@ -1,0 +1,6 @@
+panel,selected_structure,selected_discount,selected_spl,audited_structure,audited_discount,audited_spl,best_none_discount,best_none_spl,best_none_rank_of_32,none_vs_audited_pct,global_check_maxdiff,share_items_no_positive_in_head,wall_s
+carparts,global,0.9,0.913448,global,0.9,0.913448,0.9,0.917899,3,0.487,1.1102230246251563e-16,0.0084,10.7
+auto,global,0.99,0.333786,global,0.99,0.333786,0.98,0.336272,10,0.745,5.551115123125783e-17,0.0,13.6
+raf,mixture,0.997,0.982928,mixture,0.997,0.982928,1.0,0.985942,22,0.307,1.1102230246251563e-16,0.0,54.8
+online_retail,none,0.95,0.741436,global,0.95,0.744335,0.95,0.741436,1,-0.39,0.0,0.0,19.7
+m5,mixture,0.95,1.733616,mixture,0.95,1.733616,0.95,1.745139,6,0.665,2.220446049250313e-16,0.1538,160.4

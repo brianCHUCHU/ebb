@@ -1,0 +1,6 @@
+panel,tail_len_min,tail_len_max,pooled_check_maxdiff,pooled_24,item_equal_24,pooled_32,item_equal_32
+carparts,9,9,3.3306690738754696e-16,"(global, 0.9)","(global, 0.9)","(global, 0.9)","(global, 0.9)"
+auto,3,3,1.1102230246251565e-16,"(global, 0.99)","(global, 0.99)","(global, 0.99)","(global, 0.99)"
+raf,14,14,2.220446049250313e-16,"(mixture, 0.997)","(mixture, 0.997)","(mixture, 0.997)","(mixture, 0.997)"
+online_retail,2,24,3.3306690738754696e-16,"(global, 0.95)","(taxonomy, 0.95)","(none, 0.95)","(none, 0.95)"
+m5,258,258,2.6645352591003757e-15,"(mixture, 0.95)","(mixture, 0.95)","(mixture, 0.95)","(mixture, 0.95)"
